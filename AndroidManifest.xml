@@ -20,8 +20,7 @@
 
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
-    <application android:label="MmsService"
-                 android:process="system">
+    <application android:label="MmsService">
 
         <service android:name=".MmsService"
                  android:enabled="true"

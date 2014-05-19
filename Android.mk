@@ -22,13 +22,16 @@ include $(CLEAR_VARS)
 LOCAL_PACKAGE_NAME := MmsService
 LOCAL_PRIVILEGED_MODULE := true
 
-LOCAL_JAVA_LIBRARIES := mms-common
+LOCAL_JAVA_LIBRARIES := telephony-common mms-common
+
+LOCAL_SRC_FILES := $(call all-java-files-under, src)
+
+LOCAL_RESOURCE_DIR := $(addprefix $(LOCAL_PATH)/, $(res_dirs))
+LOCAL_AAPT_FLAGS := --auto-add-overlay
 
 # TODO (ywen): Temporarily disabled. Turn it on before ship
 #LOCAL_PROGUARD_FLAG_FILES := proguard.cfg
 LOCAL_PROGUARD_ENABLED := disabled
-
-LOCAL_SRC_FILES := $(call all-java-files-under, src)
 
 LOCAL_CERTIFICATE := platform
 
