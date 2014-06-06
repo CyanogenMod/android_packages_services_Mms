@@ -60,7 +60,7 @@ public class MmsNetworkManager {
             synchronized (MmsNetworkManager.this) {
                 if (mRequest != null && mRequest.equals(networkRequest)) {
                     mNetwork = network;
-                    mNetwork.bindProcess();
+                    ConnectivityManager.setProcessDefaultNetwork(mNetwork);
                     MmsNetworkManager.this.notifyAll();
                 }
             }
@@ -73,7 +73,7 @@ public class MmsNetworkManager {
                     + ", network=" + network + ", current request=" + mRequest);
             synchronized (MmsNetworkManager.this) {
                 if (mRequest != null && mRequest.equals(networkRequest)) {
-                    Network.unbindProcess();
+                    ConnectivityManager.setProcessDefaultNetwork(null);
                     mNetwork = null;
                     releaseRequest();
                     MmsNetworkManager.this.notifyAll();
