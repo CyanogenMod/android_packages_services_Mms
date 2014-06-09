@@ -19,6 +19,7 @@ package com.android.mms.service;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
+import android.os.UserHandle;
 import android.util.Log;
 
 /**
@@ -33,7 +34,9 @@ public class BootCompletedReceiver extends BroadcastReceiver {
         if (Intent.ACTION_BOOT_COMPLETED.equals(action)) {
             Log.d(LOG_TAG, "Boot completed. Start the service.");
             Intent startIntent = new Intent(context, MmsService.class);
-            context.startService(startIntent);
+            // Only start the service as the owner of the device
+            // Otherwise we would have permission problem
+            context.startServiceAsUser(startIntent, UserHandle.OWNER);
         }
     }
 }
