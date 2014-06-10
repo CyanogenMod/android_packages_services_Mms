@@ -45,6 +45,7 @@ public abstract class MmsRequest {
                 try {
                     final ApnSettings apn = ApnSettings.load(context, null/*apnName*/);
                     response = doHttp(context, apn);
+                    result = Activity.RESULT_OK;
                     // Success
                     break;
                 } finally {
