@@ -51,6 +51,7 @@ public class MmsNetworkManager {
     private int mMmsRequestCount;
 
     // Network callback listener for monitoring status of requested MMS network
+/**
     private NetworkCallbackListener mNetworkCallbackListener = new NetworkCallbackListener() {
         @Override
         public void onAvailable(NetworkRequest networkRequest, Network network) {
@@ -94,19 +95,19 @@ public class MmsNetworkManager {
             }
         }
     };
-
+*/
     public MmsNetworkManager(Context context) {
         mContext = context;
         mRequest = null;
         mNetwork = null;
         mMmsRequestCount = 0;
     }
-
+/**
     private static final NetworkCapabilities MMS_NETWORK_CAPABILITIES = new NetworkCapabilities();
     static {
         MMS_NETWORK_CAPABILITIES.addNetworkCapability(NetworkCapabilities.NET_CAPABILITY_MMS);
     }
-
+ */
     /**
      * Acquire the MMS network
      *
@@ -165,21 +166,21 @@ public class MmsNetworkManager {
      * Start a new {@link android.net.NetworkRequest} for MMS
      */
     private void newRequest() {
-        final ConnectivityManager connectivityManager =
-                (ConnectivityManager) mContext.getSystemService(Context.CONNECTIVITY_SERVICE);
-        mRequest = connectivityManager.requestNetwork(MMS_NETWORK_CAPABILITIES,
-                mNetworkCallbackListener, NETWORK_REQUEST_TIMEOUT_SEC);
+//        final ConnectivityManager connectivityManager =
+//                (ConnectivityManager) mContext.getSystemService(Context.CONNECTIVITY_SERVICE);
+//        mRequest = connectivityManager.requestNetwork(MMS_NETWORK_CAPABILITIES,
+//                mNetworkCallbackListener, NETWORK_REQUEST_TIMEOUT_SEC);
     }
 
     /**
      * Release the current {@link android.net.NetworkRequest} for MMS
      */
     private void releaseRequest() {
-        if (mRequest != null) {
-            final ConnectivityManager connectivityManager =
-                    (ConnectivityManager) mContext.getSystemService(Context.CONNECTIVITY_SERVICE);
-            connectivityManager.releaseNetworkRequest(mRequest);
-            mRequest = null;
-        }
+//        if (mRequest != null) {
+//            final ConnectivityManager connectivityManager =
+//                    (ConnectivityManager) mContext.getSystemService(Context.CONNECTIVITY_SERVICE);
+//            connectivityManager.releaseNetworkRequest(mRequest);
+//            mRequest = null;
+//        }
     }
 }
