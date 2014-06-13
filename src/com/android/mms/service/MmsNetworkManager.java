@@ -20,7 +20,6 @@ import com.android.mms.service.exception.MmsNetworkException;
 
 import android.content.Context;
 import android.net.ConnectivityManager;
-import android.net.ConnectivityManager.NetworkCallbackListener;
 import android.net.Network;
 import android.net.NetworkCapabilities;
 import android.net.NetworkRequest;
