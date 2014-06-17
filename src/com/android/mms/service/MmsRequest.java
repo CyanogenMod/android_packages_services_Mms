@@ -24,7 +24,7 @@ import android.app.Activity;
 import android.app.PendingIntent;
 import android.content.Context;
 import android.content.Intent;
-import android.telephony.MmsManager;
+import android.telephony.SmsManager;
 import android.util.Log;
 
 
@@ -53,19 +53,19 @@ public abstract class MmsRequest {
                 }
             } catch (ApnException e) {
                 Log.e(MmsService.TAG, "MmsRequest: APN failure", e);
-                result = MmsManager.RESULT_ERROR_INVALID_APN;
+                result = SmsManager.MMS_ERROR_INVALID_APN;
                 break;
             } catch (MmsNetworkException e) {
                 Log.e(MmsService.TAG, "MmsRequest: MMS network acquiring failure", e);
-                result = MmsManager.RESULT_ERROR_UNABLE_CONNECT_MMS;
+                result = SmsManager.MMS_ERROR_UNABLE_CONNECT_MMS;
                 // Retry
             } catch (MmsHttpException e) {
                 Log.e(MmsService.TAG, "MmsRequest: HTTP or network I/O failure", e);
-                result = MmsManager.RESULT_ERROR_HTTP_FAILURE;
+                result = SmsManager.MMS_ERROR_HTTP_FAILURE;
                 // Retry
             } catch (Exception e) {
                 Log.e(MmsService.TAG, "MmsRequest: unexpected failure", e);
-                result = MmsManager.RESULT_ERROR_UNSPECIFIED;
+                result = SmsManager.MMS_ERROR_UNSPECIFIED;
                 break;
             }
             try {
@@ -79,7 +79,7 @@ public abstract class MmsRequest {
             Intent extra = null;
             if (response != null) {
                 extra = new Intent();
-                extra.putExtra(MmsManager.EXTRA_DATA, response);
+                extra.putExtra(SmsManager.MMS_EXTRA_DATA, response);
             }
             try {
                 pendingIntent.send(context, result, extra);

@@ -36,7 +36,7 @@ import android.util.Log;
  */
 public class MmsService extends Service {
     public static final String TAG = "MmsService";
-    private static final String SERVICE_NAME = "com.android.internal.telephony.mms.IMms";
+    private static final String SERVICE_NAME = "imms";
 
     private static final int QUEUE_INDEX_SEND = 0;
     private static final int QUEUE_INDEX_DOWNLOAD = 1;
@@ -60,16 +60,16 @@ public class MmsService extends Service {
 
     private IMms.Stub mStub = new IMms.Stub() {
         @Override
-        public void sendMessage(byte[] pdu, String locationUrl, PendingIntent sentIntent)
-                throws RemoteException {
+        public void sendMessage(String callingPkg, byte[] pdu, String locationUrl,
+                PendingIntent sentIntent) throws RemoteException {
             enforceCallingPermission(Manifest.permission.SEND_SMS, "Sending MMS message");
             Log.d(TAG, "sendMessage");
             enqueueRequest(QUEUE_INDEX_SEND, new SendRequest(pdu, locationUrl, sentIntent));
         }
 
         @Override
-        public void downloadMessage(String locationUrl, PendingIntent downloadedIntent)
-                throws RemoteException {
+        public void downloadMessage(String callingPkg, String locationUrl,
+                PendingIntent downloadedIntent) throws RemoteException {
             enforceCallingPermission(Manifest.permission.SEND_SMS, "Downloading MMS message");
             Log.d(TAG, "downloadMessage: " + locationUrl);
             enqueueRequest(QUEUE_INDEX_DOWNLOAD,
