@@ -16,7 +16,7 @@
 
 package com.android.mms.service;
 
-import com.android.internal.telephony.mms.IMms;
+import com.android.internal.telephony.IMms;
 
 import android.Manifest;
 import android.app.PendingIntent;
