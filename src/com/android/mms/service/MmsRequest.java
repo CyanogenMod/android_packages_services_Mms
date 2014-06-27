@@ -24,9 +24,9 @@ import android.app.Activity;
 import android.app.PendingIntent;
 import android.content.Context;
 import android.content.Intent;
+import android.net.Uri;
 import android.telephony.SmsManager;
 import android.util.Log;
-
 
 /**
  * Base class for MMS requests. This has the common logic of sending/downloading MMS.
@@ -34,7 +34,11 @@ import android.util.Log;
 public abstract class MmsRequest {
     private static final int RETRY_TIMES = 3;
 
+    // The URI of persisted message
+    protected Uri mMessageUri;
+
     public void execute(Context context, MmsNetworkManager networkManager) {
+        preExecute(context);
         int result = Activity.RESULT_OK;
         byte[] response = null;
         long retryDelay = 2;
@@ -73,23 +77,55 @@ public abstract class MmsRequest {
             } catch (InterruptedException e) {}
             retryDelay <<= 1;
         }
+        postExecute(context, result, response);
+
         // Return MMS HTTP request result via PendingIntent
         final PendingIntent pendingIntent = getPendingIntent();
         if (pendingIntent != null) {
-            Intent extra = null;
+            // Extra information to send back with the pending intent
+            Intent fillIn = new Intent();
             if (response != null) {
-                extra = new Intent();
-                extra.putExtra(SmsManager.MMS_EXTRA_DATA, response);
+                fillIn.putExtra(SmsManager.MMS_EXTRA_DATA, response);
+            }
+            if (mMessageUri != null) {
+                fillIn.putExtra("uri", mMessageUri.toString());
             }
             try {
-                pendingIntent.send(context, result, extra);
+                pendingIntent.send(context, result, fillIn);
             } catch (PendingIntent.CanceledException e) {
                 Log.e(MmsService.TAG, "MmsRequest: sending pending intent canceled", e);
             }
         }
     }
 
+    /**
+     * Making the HTTP request to MMSC
+     *
+     * @param context The context
+     * @param apn The APN setting
+     * @return The HTTP response data
+     * @throws MmsHttpException If any network error happens
+     */
     protected abstract byte[] doHttp(Context context, ApnSettings apn) throws MmsHttpException;
 
+    /**
+     * @return The PendingIntent associate with the MMS sending invocation
+     */
     protected abstract PendingIntent getPendingIntent();
+
+    /**
+     * Pre-execution action
+     *
+     * @param context The context
+     */
+    protected abstract void preExecute(Context context);
+
+    /**
+     * Post-execution action
+     *
+     * @param context The context
+     * @param result The result code of execution
+     * @param response The response of execution
+     */
+    protected abstract void postExecute(Context context, int result, byte[] response);
 }
