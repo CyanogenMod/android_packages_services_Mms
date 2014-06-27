@@ -26,7 +26,7 @@ LOCAL_JAVA_LIBRARIES := telephony-common mms-common
 
 LOCAL_SRC_FILES := $(call all-java-files-under, src)
 
-LOCAL_RESOURCE_DIR := $(addprefix $(LOCAL_PATH)/, $(res_dirs))
+LOCAL_RESOURCE_DIR := $(LOCAL_PATH)/res
 LOCAL_AAPT_FLAGS := --auto-add-overlay
 
 # TODO (ywen): Temporarily disabled. Turn it on before ship
