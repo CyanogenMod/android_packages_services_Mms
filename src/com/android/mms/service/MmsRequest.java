@@ -22,9 +22,12 @@ import com.android.mms.service.exception.MmsNetworkException;
 
 import android.app.Activity;
 import android.app.PendingIntent;
+import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.net.Uri;
+import android.os.Bundle;
+import android.provider.Telephony;
 import android.telephony.SmsManager;
 import android.util.Log;
 
@@ -34,11 +37,77 @@ import android.util.Log;
 public abstract class MmsRequest {
     private static final int RETRY_TIMES = 3;
 
+    protected static final String EXTRA_MESSAGE_REF = "messageref";
+
+    /**
+     * Interface for certain functionalities from MmsService
+     */
+    public static interface RequestManager {
+        /**
+         * Add a request to pending queue when it is executed by carrier app
+         *
+         * @param key The message ref key from carrier app
+         * @param request The request in pending
+         */
+        public void addPending(int key, MmsRequest request);
+
+        /**
+         * Enqueue an MMS request for running
+         *
+         * @param request the request to enqueue
+         */
+        public void addRunning(MmsRequest request);
+    }
+
     // The URI of persisted message
     protected Uri mMessageUri;
+    // The reference to the pending requests manager (i.e. the MmsService)
+    protected RequestManager mRequestManager;
 
+    // Intent result receiver for carrier app
+    protected final BroadcastReceiver mCarrierAppResultReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            final String action = intent.getAction();
+            if (action.equals(Telephony.Mms.Intents.MMS_SEND_ACTION) ||
+                    action.equals(Telephony.Mms.Intents.MMS_DOWNLOAD_ACTION)) {
+                Log.d(MmsService.TAG, "Carrier app result for " + action);
+                final int rc = getResultCode();
+                if (rc == Activity.RESULT_OK) {
+                    // Handled by carrier app, waiting for result
+                    Log.d(MmsService.TAG, "Sending/downloading MMS by IP pending.");
+                    final Bundle resultExtras = getResultExtras(false);
+                    if (resultExtras != null && resultExtras.containsKey(EXTRA_MESSAGE_REF)) {
+                        final int ref = resultExtras.getInt(EXTRA_MESSAGE_REF);
+                        Log.d(MmsService.TAG, "messageref = " + ref);
+                        mRequestManager.addPending(ref, MmsRequest.this);
+                    } else {
+                        // Bad, no message ref provided
+                        Log.e(MmsService.TAG, "Can't find messageref in result extras.");
+                    }
+                } else {
+                    // No carrier app present, sending normally
+                    Log.d(MmsService.TAG, "Sending/downloading MMS by IP failed.");
+                    mRequestManager.addRunning(MmsRequest.this);
+                }
+            } else {
+                Log.e(MmsService.TAG, "unexpected BroadcastReceiver action: " + action);
+            }
+
+        }
+    };
+
+    public MmsRequest(RequestManager requestManager) {
+        mRequestManager = requestManager;
+    }
+
+    /**
+     * Execute the request
+     *
+     * @param context The context
+     * @param networkManager The network manager to use
+     */
     public void execute(Context context, MmsNetworkManager networkManager) {
-        preExecute(context);
         int result = Activity.RESULT_OK;
         byte[] response = null;
         long retryDelay = 2;
@@ -77,7 +146,19 @@ public abstract class MmsRequest {
             } catch (InterruptedException e) {}
             retryDelay <<= 1;
         }
-        postExecute(context, result, response);
+        processResult(context, result, response);
+    }
+
+    /**
+     * Process the result of the completed request, including updating the message status
+     * in database and sending back the result via pending intents.
+     *
+     * @param context The context
+     * @param result The result code of execution
+     * @param response The response body
+     */
+    public void processResult(Context context, int result, byte[] response) {
+        updateStatus(context, result, response);
 
         // Return MMS HTTP request result via PendingIntent
         final PendingIntent pendingIntent = getPendingIntent();
@@ -114,18 +195,16 @@ public abstract class MmsRequest {
     protected abstract PendingIntent getPendingIntent();
 
     /**
-     * Pre-execution action
-     *
-     * @param context The context
+     * @return The running queue should be used by this request
      */
-    protected abstract void preExecute(Context context);
+    protected abstract int getRunningQueue();
 
     /**
-     * Post-execution action
+     * Update database status of the message represented by this request
      *
      * @param context The context
      * @param result The result code of execution
-     * @param response The response of execution
+     * @param response The response body
      */
-    protected abstract void postExecute(Context context, int result, byte[] response);
+    protected abstract void updateStatus(Context context, int result, byte[] response);
 }

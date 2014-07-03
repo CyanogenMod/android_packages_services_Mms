@@ -25,11 +25,15 @@ import com.google.android.mms.util.SqliteWrapper;
 
 import com.android.mms.service.exception.MmsHttpException;
 
+import android.app.Activity;
+import android.app.AppOpsManager;
 import android.app.PendingIntent;
 import android.content.ContentValues;
 import android.content.Context;
+import android.content.Intent;
 import android.database.sqlite.SQLiteException;
 import android.os.Binder;
+import android.os.UserHandle;
 import android.provider.Telephony;
 import android.util.Log;
 
@@ -40,7 +44,9 @@ public class DownloadRequest extends MmsRequest {
     private final String mLocationUrl;
     private final PendingIntent mDownloadedIntent;
 
-    public DownloadRequest(String locationUrl, PendingIntent downloadedIntent) {
+    public DownloadRequest(RequestManager manager, String locationUrl,
+            PendingIntent downloadedIntent) {
+        super(manager);
         mLocationUrl = locationUrl;
         mDownloadedIntent = downloadedIntent;
     }
@@ -63,12 +69,12 @@ public class DownloadRequest extends MmsRequest {
     }
 
     @Override
-    protected void preExecute(Context context) {
-        // Do nothing
+    protected int getRunningQueue() {
+        return MmsService.QUEUE_INDEX_DOWNLOAD;
     }
 
     @Override
-    protected void postExecute(Context context, int result, byte[] response) {
+    protected void updateStatus(Context context, int result, byte[] response) {
         if (response == null || response.length < 1) {
             return;
         }
@@ -76,7 +82,7 @@ public class DownloadRequest extends MmsRequest {
         try {
             final GenericPdu pdu = (new PduParser(response)).parse();
             if (pdu == null || !(pdu instanceof RetrieveConf)) {
-                Log.e(MmsService.TAG, "DownloadRequest.postExecute: invalid parsed PDU");
+                Log.e(MmsService.TAG, "DownloadRequest.updateStatus: invalid parsed PDU");
                 return;
             }
             // Store the downloaded message
@@ -88,7 +94,7 @@ public class DownloadRequest extends MmsRequest {
                     true/*groupMmsEnabled*/,
                     null/*preOpenedFiles*/);
             if (mMessageUri == null) {
-                Log.e(MmsService.TAG, "DownloadRequest.postExecute: can not persist message");
+                Log.e(MmsService.TAG, "DownloadRequest.updateStatus: can not persist message");
                 return;
             }
             // Update some of the properties of the message
@@ -99,13 +105,34 @@ public class DownloadRequest extends MmsRequest {
             SqliteWrapper.update(context, context.getContentResolver(), mMessageUri, values,
                     null/*where*/, null/*selectionArg*/);
         } catch (MmsException e) {
-            Log.e(MmsService.TAG, "DownloadRequest.postExecute: can not persist message", e);
+            Log.e(MmsService.TAG, "DownloadRequest.updateStatus: can not persist message", e);
         } catch (SQLiteException e) {
-            Log.e(MmsService.TAG, "DownloadRequest.postExecute: can not update message", e);
+            Log.e(MmsService.TAG, "DownloadRequest.updateStatus: can not update message", e);
         } catch (RuntimeException e) {
-            Log.e(MmsService.TAG, "DownloadRequest.postExecute: can not parse response", e);
+            Log.e(MmsService.TAG, "DownloadRequest.updateStatus: can not parse response", e);
         } finally {
             Binder.restoreCallingIdentity(identity);
         }
+    }
+
+    /**
+     * Try downloading via the carrier app by sending intent.
+     *
+     * @param context The context
+     */
+    public void tryDownloadingByCarrierApp(Context context) {
+        Intent intent = new Intent(Telephony.Mms.Intents.MMS_DOWNLOAD_ACTION);
+        intent.putExtra("url", mLocationUrl);
+        intent.addFlags(Intent.FLAG_RECEIVER_NO_ABORT);
+        context.sendOrderedBroadcastAsUser(
+                intent,
+                UserHandle.OWNER,
+                android.Manifest.permission.RECEIVE_MMS,
+                AppOpsManager.OP_RECEIVE_MMS,
+                mCarrierAppResultReceiver,
+                null/*scheduler*/,
+                Activity.RESULT_CANCELED,
+                null/*initialData*/,
+                null/*initialExtras*/);
     }
 }

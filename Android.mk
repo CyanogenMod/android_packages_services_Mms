@@ -34,5 +34,6 @@ LOCAL_AAPT_FLAGS := --auto-add-overlay
 LOCAL_PROGUARD_ENABLED := disabled
 
 LOCAL_CERTIFICATE := platform
+LOCAL_PRIVILEGED_MODULE := true
 
 include $(BUILD_PACKAGE)

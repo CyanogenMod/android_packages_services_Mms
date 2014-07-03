@@ -27,11 +27,14 @@ import com.google.android.mms.util.SqliteWrapper;
 import com.android.mms.service.exception.MmsHttpException;
 
 import android.app.Activity;
+import android.app.AppOpsManager;
 import android.app.PendingIntent;
 import android.content.ContentValues;
 import android.content.Context;
+import android.content.Intent;
 import android.database.sqlite.SQLiteException;
 import android.os.Binder;
+import android.os.UserHandle;
 import android.provider.Telephony;
 import android.util.Log;
 
@@ -43,7 +46,9 @@ public class SendRequest extends MmsRequest {
     private final String mLocationUrl;
     private final PendingIntent mSentIntent;
 
-    public SendRequest(byte[] pdu, String locationUrl, PendingIntent sentIntent) {
+    public SendRequest(RequestManager manager, byte[] pdu, String locationUrl,
+            PendingIntent sentIntent) {
+        super(manager);
         mPdu = pdu;
         mLocationUrl = locationUrl;
         mSentIntent = sentIntent;
@@ -53,7 +58,7 @@ public class SendRequest extends MmsRequest {
     protected byte[] doHttp(Context context, ApnSettings apn) throws MmsHttpException {
         return HttpUtils.httpConnection(
                 context,
-                MmsConfig.getNotifyWapMMSC() ? mLocationUrl : apn.getMmscUrl(),
+                mLocationUrl != null ? mLocationUrl : apn.getMmscUrl(),
                 mPdu,
                 HttpUtils.HTTP_POST_METHOD,
                 apn.isProxySet(),
@@ -67,19 +72,23 @@ public class SendRequest extends MmsRequest {
     }
 
     @Override
-    protected void preExecute(Context context) {
+    protected int getRunningQueue() {
+        return MmsService.QUEUE_INDEX_SEND;
+    }
+
+    public void storeInOutbox(Context context) {
         if (mPdu == null) {
-            Log.e(MmsService.TAG, "SendRequest.preExecute: empty PDU");
+            Log.e(MmsService.TAG, "SendRequest.storeInOutbox: empty PDU");
             return;
         }
         try {
             final GenericPdu pdu = (new PduParser(mPdu)).parse();
             if (pdu == null) {
-                Log.e(MmsService.TAG, "SendRequest.preExecute: can't parse input PDU");
+                Log.e(MmsService.TAG, "SendRequest.storeInOutbox: can't parse input PDU");
                 return;
             }
             if (!(pdu instanceof SendReq)) {
-                Log.d(MmsService.TAG, "SendRequest.preExecute: not SendReq");
+                Log.d(MmsService.TAG, "SendRequest.storeInOutbox: not SendReq");
                 return;
             }
             final PduPersister persister = PduPersister.getPduPersister(context);
@@ -90,14 +99,14 @@ public class SendRequest extends MmsRequest {
                     true/*groupMmsEnabled*/,
                     null/*preOpenedFiles*/);
         } catch (MmsException e) {
-            Log.e(MmsService.TAG, "SendRequest.preExecute: can not persist message", e);
+            Log.e(MmsService.TAG, "SendRequest.storeInOutbox: can not persist message", e);
         } catch (RuntimeException e) {
-            Log.e(MmsService.TAG, "SendRequest.preExecute: unexpected parsing failure", e);
+            Log.e(MmsService.TAG, "SendRequest.storeInOutbox: unexpected parsing failure", e);
         }
     }
 
     @Override
-    protected void postExecute(Context context, int result, byte[] response) {
+    protected void updateStatus(Context context, int result, byte[] response) {
         if (mMessageUri == null) {
             return;
         }
@@ -124,11 +133,33 @@ public class SendRequest extends MmsRequest {
             SqliteWrapper.update(context, context.getContentResolver(), mMessageUri, values,
                     null/*where*/, null/*selectionArg*/);
         } catch (SQLiteException e) {
-            Log.e(MmsService.TAG, "SendRequest.postExecute: can not update message", e);
+            Log.e(MmsService.TAG, "SendRequest.updateStatus: can not update message", e);
         } catch (RuntimeException e) {
-            Log.e(MmsService.TAG, "SendRequest.postExecute: can not parse response", e);
+            Log.e(MmsService.TAG, "SendRequest.updateStatus: can not parse response", e);
         } finally {
             Binder.restoreCallingIdentity(identity);
         }
+    }
+
+    /**
+     * Try sending via the carrier app by sending an intent
+     *
+     * @param context The context
+     */
+    public void trySendingByCarrierApp(Context context) {
+        Intent intent = new Intent(Telephony.Mms.Intents.MMS_SEND_ACTION);
+        intent.putExtra("pdu", mPdu);
+        intent.putExtra("url", mLocationUrl);
+        intent.addFlags(Intent.FLAG_RECEIVER_NO_ABORT);
+        context.sendOrderedBroadcastAsUser(
+                intent,
+                UserHandle.OWNER,
+                android.Manifest.permission.RECEIVE_MMS,
+                AppOpsManager.OP_RECEIVE_MMS,
+                mCarrierAppResultReceiver,
+                null/*scheduler*/,
+                Activity.RESULT_CANCELED,
+                null/*initialData*/,
+                null/*initialExtras*/);
     }
 }

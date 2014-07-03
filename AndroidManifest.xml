@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Copyright (C) 20014 The Android Open Source Project
+<!-- Copyright (C) 2014 The Android Open Source Project
 
      Licensed under the Apache License, Version 2.0 (the "License");
      you may not use this file except in compliance with the License.
@@ -15,6 +15,7 @@
 -->
 
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
+          xmlns:androidprv="http://schemas.android.com/apk/prv/res/android"
           package="com.android.mms.service"
           coreApp="true"
           android:sharedUserId="android.uid.system">
@@ -22,6 +23,7 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.READ_SMS"/>
     <uses-permission android:name="android.permission.WRITE_SMS"/>
+    <uses-permission android:name="android.permission.BROADCAST_WAP_PUSH"/>
 
     <application android:label="MmsService">
 

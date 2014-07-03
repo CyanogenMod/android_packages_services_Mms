@@ -19,6 +19,7 @@ package com.android.mms.service;
 import com.android.internal.telephony.IMms;
 
 import android.Manifest;
+import android.app.Activity;
 import android.app.PendingIntent;
 import android.app.Service;
 import android.content.Intent;
@@ -31,15 +32,28 @@ import android.os.RemoteException;
 import android.os.ServiceManager;
 import android.util.Log;
 
+import java.util.concurrent.ConcurrentHashMap;
+
 /**
  * System service to process MMS API requests
  */
-public class MmsService extends Service {
+public class MmsService extends Service implements MmsRequest.RequestManager {
     public static final String TAG = "MmsService";
+
+    public static final int QUEUE_INDEX_SEND = 0;
+    public static final int QUEUE_INDEX_DOWNLOAD = 1;
+
     private static final String SERVICE_NAME = "imms";
 
-    private static final int QUEUE_INDEX_SEND = 0;
-    private static final int QUEUE_INDEX_DOWNLOAD = 1;
+    // Pending requests that are currently executed by carrier app
+    // TODO: persist this in case MmsService crashes
+    private final ConcurrentHashMap<Integer, MmsRequest> mPendingRequests =
+            new ConcurrentHashMap<Integer, MmsRequest>();
+
+    @Override
+    public void addPending(int key, MmsRequest request) {
+        mPendingRequests.put(key, request);
+    }
 
     /**
      * A thread-based request queue for executing the MMS requests in serial order
@@ -64,16 +78,60 @@ public class MmsService extends Service {
                 PendingIntent sentIntent) throws RemoteException {
             enforceCallingPermission(Manifest.permission.SEND_SMS, "Sending MMS message");
             Log.d(TAG, "sendMessage");
-            enqueueRequest(QUEUE_INDEX_SEND, new SendRequest(pdu, locationUrl, sentIntent));
+            final SendRequest request =
+                    new SendRequest(MmsService.this, pdu, locationUrl, sentIntent);
+            // Store the message in outbox first before sending
+            request.storeInOutbox(MmsService.this);
+            // Try sending via carrier app
+            request.trySendingByCarrierApp(MmsService.this);
         }
 
         @Override
         public void downloadMessage(String callingPkg, String locationUrl,
                 PendingIntent downloadedIntent) throws RemoteException {
-            enforceCallingPermission(Manifest.permission.SEND_SMS, "Downloading MMS message");
+            enforceCallingPermission(Manifest.permission.RECEIVE_MMS, "Downloading MMS message");
             Log.d(TAG, "downloadMessage: " + locationUrl);
-            enqueueRequest(QUEUE_INDEX_DOWNLOAD,
-                    new DownloadRequest(locationUrl, downloadedIntent));
+            final DownloadRequest request =
+                    new DownloadRequest(MmsService.this, locationUrl, downloadedIntent);
+            // Try downloading via carrier app
+            request.tryDownloadingByCarrierApp(MmsService.this);
+        }
+
+        @Override
+        public void updateMmsSendStatus(int messageRef, boolean success) {
+            Log.d(TAG, "updateMmsSendStatus: ref=" + messageRef + ", success=" + success);
+            final MmsRequest request = mPendingRequests.get(messageRef);
+            if (request != null) {
+                if (success) {
+                    // Sent successfully by carrier app, finalize the request
+                    request.processResult(MmsService.this, Activity.RESULT_OK, null/*response*/);
+                } else {
+                    // Failed, try sending via carrier network
+                    addRunning(request);
+                }
+            } else {
+                // Really wrong here: can't find the request to update
+                Log.e(TAG, "Failed to find the request to update send status");
+            }
+        }
+
+        @Override
+        public void updateMmsDownloadStatus(int messageRef, byte[] pdu) {
+            Log.d(TAG, "updateMmsDownloadStatus: ref=" + messageRef
+                    + ", pdu=" + (pdu == null ? null : pdu.length));
+            final MmsRequest request = mPendingRequests.get(messageRef);
+            if (request != null) {
+                if (pdu != null) {
+                    // Downloaded successfully by carrier app, finalize the request
+                    request.processResult(MmsService.this, Activity.RESULT_OK, pdu);
+                } else {
+                    // Failed, try downloading via the carrier network
+                    addRunning(request);
+                }
+            } else {
+                // Really wrong here: can't find the request to update
+                Log.e(TAG, "Failed to find the request to update download status");
+            }
         }
     };
 
@@ -104,17 +162,16 @@ public class MmsService extends Service {
         }
     }
 
-    /**
-     * Enqueue an MMS request
-     *
-     * @param queueIndex the index of the queue
-     * @param request the request to enqueue
-     */
-    private void enqueueRequest(int queueIndex, MmsRequest request) {
-        startRequestQueueIfNeeded(queueIndex);
+    @Override
+    public void addRunning(MmsRequest request) {
+        if (request == null) {
+            return;
+        }
+        final int queue = request.getRunningQueue();
+        startRequestQueueIfNeeded(queue);
         final Message message = Message.obtain();
         message.obj = request;
-        mRequestQueues[queueIndex].sendMessage(message);
+        mRequestQueues[queue].sendMessage(message);
     }
 
     @Override
@@ -126,7 +183,6 @@ public class MmsService extends Service {
         return mStub;
     }
 
-
     @Override
     public void onCreate() {
         super.onCreate();
@@ -137,11 +193,5 @@ public class MmsService extends Service {
         // Load mms_config
         // TODO (ywen): make sure we start request queues after mms_config is loaded
         MmsConfig.init(this);
-    }
-
-    @Override
-    public void onDestroy() {
-        super.onDestroy();
-        Log.d(TAG, "onDestroy");
     }
 }
