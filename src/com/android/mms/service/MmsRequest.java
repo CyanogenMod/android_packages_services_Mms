@@ -63,6 +63,10 @@ public abstract class MmsRequest {
     protected Uri mMessageUri;
     // The reference to the pending requests manager (i.e. the MmsService)
     protected RequestManager mRequestManager;
+    // The SIM id
+    protected long mSubId;
+    // The creator app
+    protected String mCreator;
 
     // Intent result receiver for carrier app
     protected final BroadcastReceiver mCarrierAppResultReceiver = new BroadcastReceiver() {
@@ -97,8 +101,11 @@ public abstract class MmsRequest {
         }
     };
 
-    public MmsRequest(RequestManager requestManager) {
+    public MmsRequest(RequestManager requestManager, Uri messageUri, long subId, String creator) {
         mRequestManager = requestManager;
+        mMessageUri = messageUri;
+        mSubId = subId;
+        mCreator = creator;
     }
 
     /**
@@ -116,7 +123,7 @@ public abstract class MmsRequest {
             try {
                 networkManager.acquireNetwork();
                 try {
-                    final ApnSettings apn = ApnSettings.load(context, null/*apnName*/);
+                    final ApnSettings apn = ApnSettings.load(context, null/*apnName*/, mSubId);
                     response = doHttp(context, apn);
                     result = Activity.RESULT_OK;
                     // Success

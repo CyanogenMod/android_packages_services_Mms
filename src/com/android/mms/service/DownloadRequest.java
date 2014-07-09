@@ -18,6 +18,7 @@ package com.android.mms.service;
 
 import com.google.android.mms.MmsException;
 import com.google.android.mms.pdu.GenericPdu;
+import com.google.android.mms.pdu.PduHeaders;
 import com.google.android.mms.pdu.PduParser;
 import com.google.android.mms.pdu.PduPersister;
 import com.google.android.mms.pdu.RetrieveConf;
@@ -35,18 +36,22 @@ import android.database.sqlite.SQLiteException;
 import android.os.Binder;
 import android.os.UserHandle;
 import android.provider.Telephony;
+import android.text.TextUtils;
 import android.util.Log;
 
 /**
  * Request to download an MMS
  */
 public class DownloadRequest extends MmsRequest {
+    private static final String LOCATION_SELECTION =
+            Telephony.Mms.MESSAGE_TYPE + "=? AND " + Telephony.Mms.CONTENT_LOCATION + " =?";
+
     private final String mLocationUrl;
     private final PendingIntent mDownloadedIntent;
 
-    public DownloadRequest(RequestManager manager, String locationUrl,
-            PendingIntent downloadedIntent) {
-        super(manager);
+    public DownloadRequest(RequestManager manager, long subId, String locationUrl,
+            PendingIntent downloadedIntent, String creator) {
+        super(manager, null/*messageUri*/, subId, creator);
         mLocationUrl = locationUrl;
         mDownloadedIntent = downloadedIntent;
     }
@@ -98,12 +103,32 @@ public class DownloadRequest extends MmsRequest {
                 return;
             }
             // Update some of the properties of the message
-            ContentValues values = new ContentValues(3);
+            ContentValues values = new ContentValues(4);
             values.put(Telephony.Mms.DATE, System.currentTimeMillis() / 1000L);
             values.put(Telephony.Mms.READ, 0);
             values.put(Telephony.Mms.SEEN, 0);
-            SqliteWrapper.update(context, context.getContentResolver(), mMessageUri, values,
-                    null/*where*/, null/*selectionArg*/);
+            if (!TextUtils.isEmpty(mCreator)) {
+                values.put(Telephony.Mms.CREATOR, mCreator);
+            }
+            if (SqliteWrapper.update(
+                    context,
+                    context.getContentResolver(),
+                    mMessageUri,
+                    values,
+                    null/*where*/,
+                    null/*selectionArg*/) != 1) {
+                Log.e(MmsService.TAG, "DownloadRequest.updateStatus: can not update message");
+            }
+            // Delete the corresponding NotificationInd
+            SqliteWrapper.delete(context,
+                    context.getContentResolver(),
+                    Telephony.Mms.CONTENT_URI,
+                    LOCATION_SELECTION,
+                    new String[]{
+                            Integer.toString(PduHeaders.MESSAGE_TYPE_NOTIFICATION_IND),
+                            mLocationUrl
+                    }
+            );
         } catch (MmsException e) {
             Log.e(MmsService.TAG, "DownloadRequest.updateStatus: can not persist message", e);
         } catch (SQLiteException e) {
