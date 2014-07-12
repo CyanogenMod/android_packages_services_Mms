@@ -23,7 +23,6 @@ import android.content.Context;
 import android.database.Cursor;
 import android.database.sqlite.SqliteWrapper;
 import android.net.NetworkUtils;
-import android.net.Uri;
 import android.provider.Telephony;
 import android.text.TextUtils;
 import android.util.Log;
@@ -62,8 +61,7 @@ public class ApnSettings {
      * @param context
      * @param apnName the optional APN name to match
      */
-    public static ApnSettings load(Context context, String apnName, long subId)
-            throws ApnException {
+    public static ApnSettings load(Context context, String apnName) throws ApnException {
         if (Log.isLoggable(TAG, Log.VERBOSE)) {
             Log.v(TAG, "ApnSettings: apnName " + apnName);
         }
@@ -78,7 +76,7 @@ public class ApnSettings {
             cursor = SqliteWrapper.query(
                     context,
                     context.getContentResolver(),
-                    Uri.withAppendedPath(Telephony.Carriers.CONTENT_URI, "/subId/" + subId),
+                    Telephony.Carriers.CONTENT_URI,
                     APN_PROJECTION,
                     selection,
                     selectionArgs,

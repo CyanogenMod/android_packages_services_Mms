@@ -146,7 +146,7 @@ public class HttpUtils {
             // inside the value.
             String extraHttpParams = MmsConfig.getHttpParams();
 
-            if (!TextUtils.isEmpty(extraHttpParams)) {
+            if (extraHttpParams != null) {
                 // Parse the parameter list
                 String paramList[] = extraHttpParams.split("\\|");
                 for (String paramPair : paramList) {

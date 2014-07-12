@@ -33,12 +33,9 @@ import android.content.ContentValues;
 import android.content.Context;
 import android.content.Intent;
 import android.database.sqlite.SQLiteException;
-import android.net.Uri;
 import android.os.Binder;
 import android.os.UserHandle;
-import android.provider.Settings;
 import android.provider.Telephony;
-import android.text.TextUtils;
 import android.util.Log;
 
 /**
@@ -49,9 +46,9 @@ public class SendRequest extends MmsRequest {
     private final String mLocationUrl;
     private final PendingIntent mSentIntent;
 
-    public SendRequest(RequestManager manager, long subId, byte[] pdu, Uri messageUri,
-            String locationUrl, PendingIntent sentIntent, String creator) {
-        super(manager, messageUri, subId, creator);
+    public SendRequest(RequestManager manager, byte[] pdu, String locationUrl,
+            PendingIntent sentIntent) {
+        super(manager);
         mPdu = pdu;
         mLocationUrl = locationUrl;
         mSentIntent = sentIntent;
@@ -85,53 +82,24 @@ public class SendRequest extends MmsRequest {
             return;
         }
         try {
-            if (mMessageUri == null) {
-                // This is a new message to send
-                final GenericPdu pdu = (new PduParser(mPdu)).parse();
-                if (pdu == null) {
-                    Log.e(MmsService.TAG, "SendRequest.storeInOutbox: can't parse input PDU");
-                    return;
-                }
-                if (!(pdu instanceof SendReq)) {
-                    Log.d(MmsService.TAG, "SendRequest.storeInOutbox: not SendReq");
-                    return;
-                }
-                final PduPersister persister = PduPersister.getPduPersister(context);
-                mMessageUri = persister.persist(
-                        pdu,
-                        Telephony.Mms.Outbox.CONTENT_URI,
-                        true/*createThreadId*/,
-                        true/*groupMmsEnabled*/,
-                        null/*preOpenedFiles*/);
-                if (mMessageUri == null) {
-                    Log.e(MmsService.TAG, "SendRequest.storeInOutbox: can not persist message");
-                    return;
-                }
-                final ContentValues values = new ContentValues(4);
-                values.put(Telephony.Mms.DATE, System.currentTimeMillis() / 1000L);
-                values.put(Telephony.Mms.READ, 1);
-                values.put(Telephony.Mms.SEEN, 1);
-                if (!TextUtils.isEmpty(mCreator)) {
-                    values.put(Telephony.Mms.CREATOR, mCreator);
-                }
-                if (SqliteWrapper.update(context, context.getContentResolver(), mMessageUri, values,
-                        null/*where*/, null/*selectionArg*/) != 1) {
-                    Log.e(MmsService.TAG, "SendRequest.storeInOutbox: failed to update message");
-                }
-            } else {
-                // This is a stored message, either in FAILED or DRAFT
-                // Move this to OUTBOX for sending
-                final ContentValues values = new ContentValues(2);
-                // Reset the timestamp
-                values.put(Telephony.Mms.DATE, System.currentTimeMillis() / 1000L);
-                values.put(Telephony.Mms.MESSAGE_BOX, Telephony.Mms.MESSAGE_BOX_OUTBOX);
-                if (SqliteWrapper.update(context, context.getContentResolver(), mMessageUri, values,
-                        null/*where*/, null/*selectionArg*/) != 1) {
-                    Log.e(MmsService.TAG, "SendRequest.storeInOutbox: failed to update message");
-                }
+            final GenericPdu pdu = (new PduParser(mPdu)).parse();
+            if (pdu == null) {
+                Log.e(MmsService.TAG, "SendRequest.storeInOutbox: can't parse input PDU");
+                return;
             }
+            if (!(pdu instanceof SendReq)) {
+                Log.d(MmsService.TAG, "SendRequest.storeInOutbox: not SendReq");
+                return;
+            }
+            final PduPersister persister = PduPersister.getPduPersister(context);
+            mMessageUri = persister.persist(
+                    pdu,
+                    Telephony.Mms.Outbox.CONTENT_URI,
+                    true/*createThreadId*/,
+                    true/*groupMmsEnabled*/,
+                    null/*preOpenedFiles*/);
         } catch (MmsException e) {
-            Log.e(MmsService.TAG, "SendRequest.storeInOutbox: can not persist/update message", e);
+            Log.e(MmsService.TAG, "SendRequest.storeInOutbox: can not persist message", e);
         } catch (RuntimeException e) {
             Log.e(MmsService.TAG, "SendRequest.storeInOutbox: unexpected parsing failure", e);
         }
@@ -153,8 +121,10 @@ public class SendRequest extends MmsRequest {
                     sendConf = (SendConf) pdu;
                 }
             }
-            final ContentValues values = new ContentValues(3);
+            final ContentValues values = new ContentValues(5);
             values.put(Telephony.Mms.MESSAGE_BOX, messageStatus);
+            values.put(Telephony.Mms.READ, 1);
+            values.put(Telephony.Mms.SEEN, 1);
             if (sendConf != null) {
                 values.put(Telephony.Mms.RESPONSE_STATUS, sendConf.getResponseStatus());
                 values.put(Telephony.Mms.MESSAGE_ID,

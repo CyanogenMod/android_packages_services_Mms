@@ -28,7 +28,6 @@ import android.util.Log;
 import java.io.UnsupportedEncodingException;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * This class manages a cached copy of current MMS configuration key values
@@ -136,9 +135,9 @@ public class MmsConfig {
 
     // Default values. This is read-only. Don't write into it.
     // This provides the info on valid keys, their types and default values
-    private static final Map<String, Object> DEFAULTS = new ConcurrentHashMap<String, Object>();
+    private static final Map<String, Object> DEFAULTS = new HashMap<String, Object>();
     // The current values
-    private static final Map<String, Object> sKeyValues = new ConcurrentHashMap<String, Object>();
+    private static final Map<String, Object> sKeyValues = new HashMap<String, Object>();
     static {
         DEFAULTS.put(CONFIG_ENABLED_MMS, Boolean.valueOf(true));
         DEFAULTS.put(CONFIG_ENABLED_TRANS_ID, Boolean.valueOf(false));
@@ -165,11 +164,11 @@ public class MmsConfig {
         DEFAULTS.put(CONFIG_MAX_MESSAGE_TEXT_SIZE, Integer.valueOf(-1));
         DEFAULTS.put(CONFIG_MAX_SUBJECT_LENGTH, Integer.valueOf(40));
         DEFAULTS.put(CONFIG_UA_PROF_TAG_NAME, DEFAULT_HTTP_KEY_X_WAP_PROFILE);
-        DEFAULTS.put(CONFIG_USER_AGENT, "");
-        DEFAULTS.put(CONFIG_UA_PROF_URL, "");
-        DEFAULTS.put(CONFIG_HTTP_PARAMS, "");
-        DEFAULTS.put(CONFIG_EMAIL_GATEWAY_NUMBER, "");
-        DEFAULTS.put(CONFIG_NAI_SUFFIX, "");
+        DEFAULTS.put(CONFIG_USER_AGENT, null);
+        DEFAULTS.put(CONFIG_UA_PROF_URL, null);
+        DEFAULTS.put(CONFIG_HTTP_PARAMS, null);
+        DEFAULTS.put(CONFIG_EMAIL_GATEWAY_NUMBER, null);
+        DEFAULTS.put(CONFIG_NAI_SUFFIX, null);
     }
 
     private static String mUserAgent = null;
@@ -195,48 +194,6 @@ public class MmsConfig {
             }
         }
         return false;
-    }
-
-    /**
-     * Check a key and its type match the predefined keys and corresponding types
-     *
-     * @param key The key of the config
-     * @param value The value of the config
-     * @return True if key and type both matches and false otherwise
-     */
-    public static boolean isValidValue(String key, Object value) {
-        if (!TextUtils.isEmpty(key) && DEFAULTS.containsKey(key)) {
-            Object defVal = DEFAULTS.get(key);
-            Class<?> valueType = defVal != null ? defVal.getClass() : String.class;
-            return value.getClass().equals(valueType);
-        }
-        return false;
-    }
-
-    /**
-     * Get a config value by its type
-     *
-     * @param key The key of the config
-     * @param type The type of the config value
-     * @return The expected typed value or null if no match
-     */
-    public static Object getValueAsType(String key, String type) {
-        if (isValidKey(key, type)) {
-            return sKeyValues.get(key);
-        }
-        return null;
-    }
-
-    /**
-     * Set a config value by its type (effected in memory, not persisted)
-     *
-     * @param key The key of the config
-     * @param value The value of the config
-     */
-    public static void setValue(String key, Object value) {
-        if (isValidValue(key, value)) {
-            sKeyValues.put(key, value);
-        }
     }
 
     public static void init(final Context context) {

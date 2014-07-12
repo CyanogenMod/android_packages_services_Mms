@@ -16,31 +16,13 @@
 
 package com.android.mms.service;
 
-import com.google.android.mms.MmsException;
-import com.google.android.mms.pdu.DeliveryInd;
-import com.google.android.mms.pdu.GenericPdu;
-import com.google.android.mms.pdu.NotificationInd;
-import com.google.android.mms.pdu.PduComposer;
-import com.google.android.mms.pdu.PduParser;
-import com.google.android.mms.pdu.PduPersister;
-import com.google.android.mms.pdu.ReadOrigInd;
-import com.google.android.mms.pdu.RetrieveConf;
-import com.google.android.mms.pdu.SendReq;
-import com.google.android.mms.util.SqliteWrapper;
-
 import com.android.internal.telephony.IMms;
 
 import android.Manifest;
 import android.app.Activity;
 import android.app.PendingIntent;
 import android.app.Service;
-import android.content.ContentUris;
-import android.content.ContentValues;
 import android.content.Intent;
-import android.database.Cursor;
-import android.database.sqlite.SQLiteException;
-import android.net.Uri;
-import android.os.Binder;
 import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.IBinder;
@@ -48,9 +30,6 @@ import android.os.Looper;
 import android.os.Message;
 import android.os.RemoteException;
 import android.os.ServiceManager;
-import android.provider.Telephony;
-import android.telephony.SmsManager;
-import android.text.TextUtils;
 import android.util.Log;
 
 import java.util.concurrent.ConcurrentHashMap;
@@ -95,12 +74,12 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
 
     private IMms.Stub mStub = new IMms.Stub() {
         @Override
-        public void sendMessage(long subId, String callingPkg, byte[] pdu, String locationUrl,
+        public void sendMessage(String callingPkg, byte[] pdu, String locationUrl,
                 PendingIntent sentIntent) throws RemoteException {
             enforceCallingPermission(Manifest.permission.SEND_SMS, "Sending MMS message");
             Log.d(TAG, "sendMessage");
-            final SendRequest request = new SendRequest(MmsService.this, subId, pdu,
-                    null/*messageUri*/, locationUrl, sentIntent, callingPkg);
+            final SendRequest request =
+                    new SendRequest(MmsService.this, pdu, locationUrl, sentIntent);
             // Store the message in outbox first before sending
             request.storeInOutbox(MmsService.this);
             // Try sending via carrier app
@@ -108,12 +87,12 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
         }
 
         @Override
-        public void downloadMessage(long subId, String callingPkg, String locationUrl,
+        public void downloadMessage(String callingPkg, String locationUrl,
                 PendingIntent downloadedIntent) throws RemoteException {
             enforceCallingPermission(Manifest.permission.RECEIVE_MMS, "Downloading MMS message");
             Log.d(TAG, "downloadMessage: " + locationUrl);
-            final DownloadRequest request = new DownloadRequest(MmsService.this, subId, locationUrl,
-                    downloadedIntent, callingPkg);
+            final DownloadRequest request =
+                    new DownloadRequest(MmsService.this, locationUrl, downloadedIntent);
             // Try downloading via carrier app
             request.tryDownloadingByCarrierApp(MmsService.this);
         }
@@ -153,176 +132,6 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
                 // Really wrong here: can't find the request to update
                 Log.e(TAG, "Failed to find the request to update download status");
             }
-        }
-
-        @Override
-        public boolean getCarrierConfigBoolean(String name, boolean defaultValue) {
-            Log.d(TAG, "getCarrierConfigBoolean " + name);
-            final Object value = MmsConfig.getValueAsType(name, MmsConfig.KEY_TYPE_BOOL);
-            if (value != null) {
-                return (Boolean)value;
-            }
-            return defaultValue;
-        }
-
-        @Override
-        public int getCarrierConfigInt(String name, int defaultValue) {
-            Log.d(TAG, "getCarrierConfigInt " + name);
-            final Object value = MmsConfig.getValueAsType(name, MmsConfig.KEY_TYPE_INT);
-            if (value != null) {
-                return (Integer)value;
-            }
-            return defaultValue;
-        }
-
-        @Override
-        public String getCarrierConfigString(String name, String defaultValue) {
-            Log.d(TAG, "getCarrierConfigString " + name);
-            final Object value = MmsConfig.getValueAsType(name, MmsConfig.KEY_TYPE_STRING);
-            if (value != null) {
-                return (String)value;
-            }
-            return defaultValue;
-        }
-
-        @Override
-        public void setCarrierConfigBoolean(String callingPkg, String name, boolean value) {
-            Log.d(TAG, "setCarrierConfig " + name);
-            enforceCallingPermission(Manifest.permission.SEND_SMS, "Setting MMS config");
-            MmsConfig.setValue(name, value);
-        }
-
-        @Override
-        public void setCarrierConfigInt(String callingPkg, String name, int value) {
-            Log.d(TAG, "setCarrierConfig " + name);
-            enforceCallingPermission(Manifest.permission.SEND_SMS, "Setting MMS config");
-            MmsConfig.setValue(name, value);
-        }
-
-        @Override
-        public void setCarrierConfigString(String callingPkg, String name, String value) {
-            if (value == null) {
-                return;
-            }
-            Log.d(TAG, "setCarrierConfig " + name);
-            enforceCallingPermission(Manifest.permission.SEND_SMS, "Setting MMS config");
-            MmsConfig.setValue(name, value);
-        }
-
-        @Override
-        public Uri importTextMessage(String callingPkg, String address, int type, String text,
-                long timestampMillis, boolean seen, boolean read) {
-            Log.d(TAG, "importTextMessage");
-            enforceCallingPermission(Manifest.permission.WRITE_SMS, "Importing SMS message");
-            return importSms(address, type, text, timestampMillis, seen, read, callingPkg);
-        }
-
-        @Override
-        public Uri importMultimediaMessage(String callingPkg, byte[] pdu, String messageId,
-                long timestampSecs, boolean seen, boolean read) {
-            Log.d(TAG, "importMultimediaMessage");
-            enforceCallingPermission(Manifest.permission.WRITE_SMS, "Importing MMS message");
-            return importMms(pdu, messageId, timestampSecs, seen, read, callingPkg);
-        }
-
-        @Override
-        public boolean deleteStoredMessage(String callingPkg, Uri messageUri)
-                throws RemoteException {
-            Log.d(TAG, "deleteStoredMessage " + messageUri);
-            enforceCallingPermission(Manifest.permission.WRITE_SMS, "Deleting SMS/MMS message");
-            if (!isSmsMmsContentUri(messageUri)) {
-                Log.e(TAG, "deleteStoredMessage: invalid message URI: " + messageUri.toString());
-                return false;
-            }
-            final long identity = Binder.clearCallingIdentity();
-            try {
-                if (getContentResolver().delete(
-                        messageUri, null/*where*/, null/*selectionArgs*/) != 1) {
-                    Log.e(TAG, "deleteStoredMessage: failed to delete");
-                    return false;
-                }
-            } catch (SQLiteException e) {
-                Log.e(TAG, "deleteStoredMessage: failed to delete", e);
-            } finally {
-                Binder.restoreCallingIdentity(identity);
-            }
-            return true;
-        }
-
-        @Override
-        public boolean deleteStoredConversation(String callingPkg, long conversationId)
-                throws RemoteException {
-            Log.d(TAG, "deleteStoredConversation " + conversationId);
-            enforceCallingPermission(Manifest.permission.WRITE_SMS, "Importing thread");
-            if (conversationId == -1) {
-                Log.e(TAG, "deleteStoredConversation: invalid thread id");
-                return false;
-            }
-            final Uri uri = ContentUris.withAppendedId(
-                    Telephony.Threads.CONTENT_URI, conversationId);
-            final long identity = Binder.clearCallingIdentity();
-            try {
-                if (getContentResolver().delete(uri, null, null) != 1) {
-                    Log.e(TAG, "deleteStoredConversation: failed to delete");
-                    return false;
-                }
-            } catch (SQLiteException e) {
-                Log.e(TAG, "deleteStoredConversation: failed to delete", e);
-            } finally {
-                Binder.restoreCallingIdentity(identity);
-            }
-            return true;
-        }
-
-        @Override
-        public boolean updateStoredMessageStatus(String callingPkg, Uri messageUri,
-                ContentValues statusValues) throws RemoteException {
-            Log.d(TAG, "updateStoredMessageStatus " + messageUri);
-            enforceCallingPermission(Manifest.permission.WRITE_SMS, "Updating SMS/MMS message");
-            return updateMessageStatus(messageUri, statusValues);
-        }
-
-        @Override
-        public Uri addTextMessageDraft(String callingPkg, String address, String text)
-                throws RemoteException {
-            Log.d(TAG, "addTextMessageDraft");
-            enforceCallingPermission(Manifest.permission.WRITE_SMS, "Adding SMS draft");
-            return addSmsDraft(address, text, callingPkg);
-        }
-
-        @Override
-        public Uri addMultimediaMessageDraft(String callingPkg, byte[] pdu)
-                throws RemoteException {
-            Log.d(TAG, "addMultimediaMessageDraft");
-            enforceCallingPermission(Manifest.permission.WRITE_SMS, "Adding MMS draft");
-            return addMmsDraft(pdu, callingPkg);
-        }
-
-        @Override
-        public void sendStoredMessage(long subId, String callingPkg, Uri messageUri,
-                PendingIntent sentIntent) throws RemoteException {
-            Log.d(TAG, "sendStoredMessage " + messageUri);
-            enforceCallingPermission(Manifest.permission.SEND_SMS, "Sending stored MMS message");
-            // Only send a FAILED or DRAFT message
-            if (!isFailedOrDraft(messageUri)) {
-                Log.e(TAG, "sendStoredMessage: not FAILED or DRAFT message");
-                returnUnspecifiedFailure(sentIntent);
-                return;
-            }
-            // Load data
-            final byte[] pduData = loadPdu(messageUri);
-            if (pduData == null || pduData.length < 1) {
-                Log.e(TAG, "sendStoredMessage: failed to load PDU data");
-                returnUnspecifiedFailure(sentIntent);
-                return;
-            }
-            final SendRequest request = new SendRequest(MmsService.this, subId, pduData, messageUri,
-                    null/*locationUrl*/, sentIntent, callingPkg);
-            // Store the message in outbox first before sending
-            request.storeInOutbox(MmsService.this);
-            // Try sending via carrier app
-            request.trySendingByCarrierApp(MmsService.this);
-
         }
     };
 
@@ -384,285 +193,5 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
         // Load mms_config
         // TODO (ywen): make sure we start request queues after mms_config is loaded
         MmsConfig.init(this);
-    }
-
-    private Uri importSms(String address, int type, String text, long timestampMillis,
-            boolean seen, boolean read, String creator) {
-        Uri insertUri = null;
-        switch (type) {
-            case SmsManager.SMS_TYPE_INCOMING:
-                insertUri = Telephony.Sms.Inbox.CONTENT_URI;
-
-                break;
-            case SmsManager.SMS_TYPE_OUTGOING:
-                insertUri = Telephony.Sms.Sent.CONTENT_URI;
-                break;
-        }
-        if (insertUri == null) {
-            Log.e(TAG, "importTextMessage: invalid message type for importing: " + type);
-            return null;
-        }
-        final ContentValues values = new ContentValues(6);
-        values.put(Telephony.Sms.ADDRESS, address);
-        values.put(Telephony.Sms.DATE, timestampMillis);
-        values.put(Telephony.Sms.SEEN, seen ? 1 : 0);
-        values.put(Telephony.Sms.READ, read ? 1 : 0);
-        values.put(Telephony.Sms.BODY, text);
-        if (!TextUtils.isEmpty(creator)) {
-            values.put(Telephony.Mms.CREATOR, creator);
-        }
-        final long identity = Binder.clearCallingIdentity();
-        try {
-            return getContentResolver().insert(insertUri, values);
-        } catch (SQLiteException e) {
-            Log.e(TAG, "importTextMessage: failed to persist imported text message", e);
-        } finally {
-            Binder.restoreCallingIdentity(identity);
-        }
-        return null;
-    }
-
-    private Uri importMms(byte[] pduData, String messageId, long timestampSecs,
-            boolean seen, boolean read, String creator) {
-        if (pduData == null || pduData.length < 1) {
-            Log.e(TAG, "importMessage: empty PDU");
-            return null;
-        }
-        final long identity = Binder.clearCallingIdentity();
-        try {
-            final GenericPdu pdu = (new PduParser(pduData)).parse();
-            if (pdu == null) {
-                Log.e(TAG, "importMessage: can't parse input PDU");
-                return null;
-            }
-            Uri insertUri = null;
-            if (pdu instanceof SendReq) {
-                insertUri = Telephony.Mms.Sent.CONTENT_URI;
-            } else if (pdu instanceof RetrieveConf ||
-                    pdu instanceof NotificationInd ||
-                    pdu instanceof DeliveryInd ||
-                    pdu instanceof ReadOrigInd) {
-                insertUri = Telephony.Mms.Inbox.CONTENT_URI;
-            }
-            if (insertUri == null) {
-                Log.e(TAG, "importMessage; invalid MMS type: " + pdu.getClass().getCanonicalName());
-                return null;
-            }
-            final PduPersister persister = PduPersister.getPduPersister(this);
-            final Uri uri = persister.persist(
-                    pdu,
-                    insertUri,
-                    true/*createThreadId*/,
-                    true/*groupMmsEnabled*/,
-                    null/*preOpenedFiles*/);
-            if (uri == null) {
-                Log.e(TAG, "importMessage: failed to persist message");
-                return null;
-            }
-            final ContentValues values = new ContentValues(5);
-            if (!TextUtils.isEmpty(messageId)) {
-                values.put(Telephony.Mms.MESSAGE_ID, messageId);
-            }
-            if (timestampSecs != -1) {
-                values.put(Telephony.Mms.DATE, timestampSecs);
-            }
-            values.put(Telephony.Mms.READ, seen ? 1 : 0);
-            values.put(Telephony.Mms.SEEN, read ? 1 : 0);
-            if (!TextUtils.isEmpty(creator)) {
-                values.put(Telephony.Mms.CREATOR, creator);
-            }
-            if (SqliteWrapper.update(this, getContentResolver(), uri, values,
-                    null/*where*/, null/*selectionArg*/) != 1) {
-                Log.e(TAG, "importMessage: failed to update message");
-            }
-            return uri;
-        } catch (RuntimeException e) {
-            Log.e(TAG, "importMessage: failed to parse input PDU", e);
-        } catch (MmsException e) {
-            Log.e(TAG, "importMessage: failed to persist message", e);
-        } finally {
-            Binder.restoreCallingIdentity(identity);
-        }
-        return null;
-    }
-
-    private static boolean isSmsMmsContentUri(Uri uri) {
-        final String uriString = uri.toString();
-        if (!uriString.startsWith("content://sms/") && !uriString.startsWith("content://mms/")) {
-            return false;
-        }
-        if (ContentUris.parseId(uri) == -1) {
-            return false;
-        }
-        return true;
-    }
-
-    private boolean updateMessageStatus(Uri messageUri, ContentValues statusValues) {
-        if (!isSmsMmsContentUri(messageUri)) {
-            Log.e(TAG, "updateMessageStatus: invalid messageUri: " + messageUri.toString());
-            return false;
-        }
-        if (statusValues == null) {
-            Log.w(TAG, "updateMessageStatus: empty values to update");
-            return false;
-        }
-        final ContentValues values = new ContentValues();
-        if (statusValues.containsKey(SmsManager.MESSAGE_STATUS_READ)) {
-            final Integer val = statusValues.getAsInteger(SmsManager.MESSAGE_STATUS_READ);
-            if (val != null) {
-                // MMS uses the same column name
-                values.put(Telephony.Sms.READ, val);
-            }
-        } else if (statusValues.containsKey(SmsManager.MESSAGE_STATUS_SEEN)) {
-            final Integer val = statusValues.getAsInteger(SmsManager.MESSAGE_STATUS_SEEN);
-            if (val != null) {
-                // MMS uses the same column name
-                values.put(Telephony.Sms.SEEN, val);
-            }
-        } else if (statusValues.containsKey(SmsManager.MESSAGE_STATUS_ARCHIVED)) {
-            final Integer val = statusValues.getAsInteger(SmsManager.MESSAGE_STATUS_ARCHIVED);
-            if (val != null) {
-                // MMS uses the same column name
-                values.put(Telephony.Sms.ARCHIVED, val);
-            }
-        }
-        if (values.size() < 1) {
-            Log.w(TAG, "updateMessageStatus: no value to update");
-            return false;
-        }
-        final long identity = Binder.clearCallingIdentity();
-        try {
-            if (getContentResolver().update(
-                    messageUri, values, null/*where*/, null/*selectionArgs*/) != 1) {
-                Log.e(TAG, "updateMessageStatus: failed to update database");
-                return false;
-            }
-            return true;
-        } catch (SQLiteException e) {
-            Log.e(TAG, "updateMessageStatus: failed to update database", e);
-        } finally {
-            Binder.restoreCallingIdentity(identity);
-        }
-        return false;
-    }
-
-    private Uri addSmsDraft(String address, String text, String creator) {
-        final ContentValues values = new ContentValues(5);
-        values.put(Telephony.Sms.ADDRESS, address);
-        values.put(Telephony.Sms.BODY, text);
-        values.put(Telephony.Sms.READ, 1);
-        values.put(Telephony.Sms.SEEN, 1);
-        if (!TextUtils.isEmpty(creator)) {
-            values.put(Telephony.Mms.CREATOR, creator);
-        }
-        final long identity = Binder.clearCallingIdentity();
-        try {
-            return getContentResolver().insert(Telephony.Sms.Draft.CONTENT_URI, values);
-        } catch (SQLiteException e) {
-            Log.e(TAG, "addSmsDraft: failed to store draft message", e);
-        } finally {
-            Binder.restoreCallingIdentity(identity);
-        }
-        return null;
-    }
-
-    private Uri addMmsDraft(byte[] pduData, String creator) {
-        if (pduData == null || pduData.length < 1) {
-            Log.e(TAG, "addMmsDraft: empty PDU");
-            return null;
-        }
-        final long identity = Binder.clearCallingIdentity();
-        try {
-            final GenericPdu pdu = (new PduParser(pduData)).parse();
-            if (pdu == null) {
-                Log.e(TAG, "addMmsDraft: can't parse input PDU");
-                return null;
-            }
-            if (!(pdu instanceof SendReq)) {
-                Log.e(TAG, "addMmsDraft; invalid MMS type: " + pdu.getClass().getCanonicalName());
-                return null;
-            }
-            final PduPersister persister = PduPersister.getPduPersister(this);
-            final Uri uri = persister.persist(
-                    pdu,
-                    Telephony.Mms.Draft.CONTENT_URI,
-                    true/*createThreadId*/,
-                    true/*groupMmsEnabled*/,
-                    null/*preOpenedFiles*/);
-            if (uri == null) {
-                Log.e(TAG, "addMmsDraft: failed to persist message");
-                return null;
-            }
-            final ContentValues values = new ContentValues(3);
-            values.put(Telephony.Mms.READ, 1);
-            values.put(Telephony.Mms.SEEN, 1);
-            if (!TextUtils.isEmpty(creator)) {
-                values.put(Telephony.Mms.CREATOR, creator);
-            }
-            if (SqliteWrapper.update(this, getContentResolver(), uri, values,
-                    null/*where*/, null/*selectionArg*/) != 1) {
-                Log.e(TAG, "addMmsDraft: failed to update message");
-            }
-            return uri;
-        } catch (RuntimeException e) {
-            Log.e(TAG, "addMmsDraft: failed to parse input PDU", e);
-        } catch (MmsException e) {
-            Log.e(TAG, "addMmsDraft: failed to persist message", e);
-        } finally {
-            Binder.restoreCallingIdentity(identity);
-        }
-        return null;
-    }
-
-    private boolean isFailedOrDraft(Uri messageUri) {
-        Cursor cursor = null;
-        try {
-            cursor = getContentResolver().query(
-                    messageUri,
-                    new String[]{ Telephony.Mms.MESSAGE_BOX },
-                    null/*selection*/,
-                    null/*selectionArgs*/,
-                    null/*sortOrder*/);
-            if (cursor != null && cursor.moveToFirst()) {
-                final int box = cursor.getInt(0);
-                return box == Telephony.Mms.MESSAGE_BOX_DRAFTS
-                        || box == Telephony.Mms.MESSAGE_BOX_FAILED;
-            }
-        } catch (SQLiteException e) {
-            Log.e(TAG, "isFailedOrDraft: query message type failed", e);
-        } finally {
-            if (cursor != null) {
-                cursor.close();
-            }
-        }
-        return false;
-    }
-
-    private byte[] loadPdu(Uri messageUri) {
-        try {
-            final PduPersister persister = PduPersister.getPduPersister(this);
-            final GenericPdu pdu = persister.load(messageUri);
-            if (pdu == null) {
-                Log.e(TAG, "loadPdu: failed to load PDU from " + messageUri.toString());
-                return null;
-            }
-            final PduComposer composer = new PduComposer(this, pdu);
-            return composer.make();
-        } catch (MmsException e) {
-            Log.e(TAG, "loadPdu: failed to load PDU from " + messageUri.toString(), e);
-        } catch (RuntimeException e) {
-            Log.e(TAG, "loadPdu: failed to serialize PDU", e);
-        }
-        return null;
-    }
-
-    private void returnUnspecifiedFailure(PendingIntent pi) {
-        if (pi != null) {
-            try {
-                pi.send(SmsManager.MMS_ERROR_UNSPECIFIED);
-            } catch (PendingIntent.CanceledException e) {
-                // ignore
-            }
-        }
     }
 }
