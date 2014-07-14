@@ -80,6 +80,12 @@ public class DownloadRequest extends MmsRequest {
 
     @Override
     protected void updateStatus(Context context, int result, byte[] response) {
+        if (mRequestManager.getAutoPersistingPref()) {
+            storeInboxMessage(context, result, response);
+        }
+    }
+
+    private void storeInboxMessage(Context context, int result, byte[] response) {
         if (response == null || response.length < 1) {
             return;
         }

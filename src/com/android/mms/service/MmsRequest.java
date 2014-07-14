@@ -64,6 +64,11 @@ public abstract class MmsRequest {
          * @return The carrier app package name that broadcasts should be directed towards.
          */
         public String getCarrierAppPackageName(Intent intent);
+
+        /*
+         * @return Whether to auto persist received MMS
+         */
+        public boolean getAutoPersistingPref();
     }
 
     // The URI of persisted message
