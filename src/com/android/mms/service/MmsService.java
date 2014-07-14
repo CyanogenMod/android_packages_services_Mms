@@ -36,7 +36,10 @@ import android.app.PendingIntent;
 import android.app.Service;
 import android.content.ContentUris;
 import android.content.ContentValues;
+import android.content.Context;
 import android.content.Intent;
+import android.content.pm.PackageManager;
+import android.content.pm.ResolveInfo;
 import android.database.Cursor;
 import android.database.sqlite.SQLiteException;
 import android.net.Uri;
@@ -50,10 +53,12 @@ import android.os.RemoteException;
 import android.os.ServiceManager;
 import android.provider.Telephony;
 import android.telephony.SmsManager;
+import android.telephony.TelephonyManager;
 import android.text.TextUtils;
 import android.util.Log;
 
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.List;
 
 /**
  * System service to process MMS API requests
@@ -121,6 +126,7 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
         @Override
         public void updateMmsSendStatus(int messageRef, boolean success) {
             Log.d(TAG, "updateMmsSendStatus: ref=" + messageRef + ", success=" + success);
+            enforceCarrierPrivilege();
             final MmsRequest request = mPendingRequests.get(messageRef);
             if (request != null) {
                 if (success) {
@@ -140,6 +146,7 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
         public void updateMmsDownloadStatus(int messageRef, byte[] pdu) {
             Log.d(TAG, "updateMmsDownloadStatus: ref=" + messageRef
                     + ", pdu=" + (pdu == null ? null : pdu.length));
+            enforceCarrierPrivilege();
             final MmsRequest request = mPendingRequests.get(messageRef);
             if (request != null) {
                 if (pdu != null) {
@@ -324,6 +331,24 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
             request.trySendingByCarrierApp(MmsService.this);
 
         }
+
+        /*
+         * Throws a security exception unless the caller has carrier privilege.
+         */
+        private void enforceCarrierPrivilege() {
+            PackageManager packageManager = getPackageManager();
+            String[] packages = packageManager.getPackagesForUid(Binder.getCallingUid());
+
+            TelephonyManager telephonyManager =
+                    (TelephonyManager) getSystemService(Context.TELEPHONY_SERVICE);
+            for (String pkg : packages) {
+                if (telephonyManager.checkCarrierPrivilegesForPackage(pkg) ==
+                        TelephonyManager.CARRIER_PRIVILEGE_STATUS_HAS_ACCESS) {
+                    return;
+                }
+            }
+            throw new SecurityException("No carrier privilege");
+        }
     };
 
     // Request queue threads
@@ -363,6 +388,28 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
         final Message message = Message.obtain();
         message.obj = request;
         mRequestQueues[queue].sendMessage(message);
+    }
+
+    @Override
+    public String getCarrierAppPackageName(Intent intent) {
+        PackageManager packageManager = getPackageManager();
+        TelephonyManager telephonyManager =
+                (TelephonyManager) getSystemService(Context.TELEPHONY_SERVICE);
+
+        List<ResolveInfo> receivers = packageManager.queryBroadcastReceivers(intent, 0);
+        for (ResolveInfo resolveInfo : receivers) {
+            if (resolveInfo.activityInfo == null) {
+                continue;
+            }
+            String packageName = resolveInfo.activityInfo.packageName;
+            if (telephonyManager.checkCarrierPrivilegesForPackage(packageName) ==
+                    TelephonyManager.CARRIER_PRIVILEGE_STATUS_HAS_ACCESS) {
+                return packageName;
+            }
+        }
+        // Return an empty package name so that no packages match.
+        // TODO: This creates an unnecessary ordered broadcast that can be avoided.
+        return "";
     }
 
     @Override

@@ -178,6 +178,7 @@ public class SendRequest extends MmsRequest {
      */
     public void trySendingByCarrierApp(Context context) {
         Intent intent = new Intent(Telephony.Mms.Intents.MMS_SEND_ACTION);
+        intent.setPackage(mRequestManager.getCarrierAppPackageName(intent));
         intent.putExtra("pdu", mPdu);
         intent.putExtra("url", mLocationUrl);
         intent.addFlags(Intent.FLAG_RECEIVER_NO_ABORT);

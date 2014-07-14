@@ -57,6 +57,13 @@ public abstract class MmsRequest {
          * @param request the request to enqueue
          */
         public void addRunning(MmsRequest request);
+
+        /**
+         * Returns the carrier app package name.
+         *
+         * @return The carrier app package name that broadcasts should be directed towards.
+         */
+        public String getCarrierAppPackageName(Intent intent);
     }
 
     // The URI of persisted message

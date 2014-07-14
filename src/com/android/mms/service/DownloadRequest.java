@@ -147,6 +147,7 @@ public class DownloadRequest extends MmsRequest {
      */
     public void tryDownloadingByCarrierApp(Context context) {
         Intent intent = new Intent(Telephony.Mms.Intents.MMS_DOWNLOAD_ACTION);
+        intent.setPackage(mRequestManager.getCarrierAppPackageName(intent));
         intent.putExtra("url", mLocationUrl);
         intent.addFlags(Intent.FLAG_RECEIVER_NO_ABORT);
         context.sendOrderedBroadcastAsUser(
