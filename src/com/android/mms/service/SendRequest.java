@@ -178,19 +178,24 @@ public class SendRequest extends MmsRequest {
      */
     public void trySendingByCarrierApp(Context context) {
         Intent intent = new Intent(Telephony.Mms.Intents.MMS_SEND_ACTION);
-        intent.setPackage(mRequestManager.getCarrierAppPackageName(intent));
-        intent.putExtra("pdu", mPdu);
-        intent.putExtra("url", mLocationUrl);
-        intent.addFlags(Intent.FLAG_RECEIVER_NO_ABORT);
-        context.sendOrderedBroadcastAsUser(
-                intent,
-                UserHandle.OWNER,
-                android.Manifest.permission.RECEIVE_MMS,
-                AppOpsManager.OP_RECEIVE_MMS,
-                mCarrierAppResultReceiver,
-                null/*scheduler*/,
-                Activity.RESULT_CANCELED,
-                null/*initialData*/,
-                null/*initialExtras*/);
+        String carrierPackage = mRequestManager.getCarrierAppPackageName(intent);
+        if (carrierPackage == null) {  // No carrier app.
+            mRequestManager.addRunning(this);
+        } else {
+            intent.setPackage(carrierPackage);
+            intent.putExtra("pdu", mPdu);
+            intent.putExtra("url", mLocationUrl);
+            intent.addFlags(Intent.FLAG_RECEIVER_NO_ABORT);
+            context.sendOrderedBroadcastAsUser(
+                    intent,
+                    UserHandle.OWNER,
+                    android.Manifest.permission.RECEIVE_MMS,
+                    AppOpsManager.OP_RECEIVE_MMS,
+                    mCarrierAppResultReceiver,
+                    null/*scheduler*/,
+                    Activity.RESULT_CANCELED,
+                    null/*initialData*/,
+                    null/*initialExtras*/);
+        }
     }
 }

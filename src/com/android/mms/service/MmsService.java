@@ -486,9 +486,8 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
                 return packageName;
             }
         }
-        // Return an empty package name so that no packages match.
-        // TODO: This creates an unnecessary ordered broadcast that can be avoided.
-        return "";
+        // No carrier app: return a null package name.
+        return null;
     }
 
     @Override

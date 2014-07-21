@@ -62,6 +62,7 @@ public abstract class MmsRequest {
          * Returns the carrier app package name.
          *
          * @return The carrier app package name that broadcasts should be directed towards.
+         *         If null, there is no carrier app.
          */
         public String getCarrierAppPackageName(Intent intent);
 
