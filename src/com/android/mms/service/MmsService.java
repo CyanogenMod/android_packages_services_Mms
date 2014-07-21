@@ -470,27 +470,6 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
     }
 
     @Override
-    public String getCarrierAppPackageName(Intent intent) {
-        PackageManager packageManager = getPackageManager();
-        TelephonyManager telephonyManager =
-                (TelephonyManager) getSystemService(Context.TELEPHONY_SERVICE);
-
-        List<ResolveInfo> receivers = packageManager.queryBroadcastReceivers(intent, 0);
-        for (ResolveInfo resolveInfo : receivers) {
-            if (resolveInfo.activityInfo == null) {
-                continue;
-            }
-            String packageName = resolveInfo.activityInfo.packageName;
-            if (telephonyManager.checkCarrierPrivilegesForPackage(packageName) ==
-                    TelephonyManager.CARRIER_PRIVILEGE_STATUS_HAS_ACCESS) {
-                return packageName;
-            }
-        }
-        // No carrier app: return a null package name.
-        return null;
-    }
-
-    @Override
     public IBinder onBind(Intent intent) {
         return mStub;
     }

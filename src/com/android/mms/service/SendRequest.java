@@ -38,8 +38,11 @@ import android.os.Binder;
 import android.os.UserHandle;
 import android.provider.Settings;
 import android.provider.Telephony;
+import android.telephony.TelephonyManager;
 import android.text.TextUtils;
 import android.util.Log;
+
+import java.util.List;
 
 /**
  * Request to send an MMS
@@ -179,12 +182,16 @@ public class SendRequest extends MmsRequest {
      * @param context The context
      */
     public void trySendingByCarrierApp(Context context) {
+        TelephonyManager telephonyManager =
+                (TelephonyManager) context.getSystemService(Context.TELEPHONY_SERVICE);
         Intent intent = new Intent(Telephony.Mms.Intents.MMS_SEND_ACTION);
-        String carrierPackage = mRequestManager.getCarrierAppPackageName(intent);
-        if (carrierPackage == null) {  // No carrier app.
+        List<String> carrierPackages = telephonyManager.getCarrierPackageNamesForBroadcastIntent(
+                intent);
+
+        if (carrierPackages == null || carrierPackages.size() != 1) {
             mRequestManager.addRunning(this);
         } else {
-            intent.setPackage(carrierPackage);
+            intent.setPackage(carrierPackages.get(0));
             intent.putExtra("pdu", mPdu);
             intent.putExtra("url", mLocationUrl);
             intent.addFlags(Intent.FLAG_RECEIVER_NO_ABORT);
