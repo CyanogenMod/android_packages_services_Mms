@@ -25,11 +25,21 @@ import android.app.PendingIntent;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
+import android.net.ConnectivityManager;
+import android.net.LinkProperties;
+import android.net.Network;
 import android.net.Uri;
 import android.os.Bundle;
 import android.provider.Telephony;
 import android.telephony.SmsManager;
 import android.util.Log;
+
+import java.net.Inet4Address;
+import java.net.Inet6Address;
+import java.net.InetAddress;
+import java.net.UnknownHostException;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * Base class for MMS requests. This has the common logic of sending/downloading MMS.
@@ -136,7 +146,7 @@ public abstract class MmsRequest {
                 networkManager.acquireNetwork();
                 try {
                     final ApnSettings apn = ApnSettings.load(context, null/*apnName*/, mSubId);
-                    response = doHttp(context, apn);
+                    response = doHttp(context, networkManager, apn);
                     result = Activity.RESULT_OK;
                     // Success
                     break;
@@ -166,6 +176,160 @@ public abstract class MmsRequest {
             retryDelay <<= 1;
         }
         processResult(context, result, response);
+    }
+
+    /**
+     * Try running MMS HTTP request for all the addresses that we can resolve to
+     *
+     * @param context The context
+     * @param netMgr The {@link com.android.mms.service.MmsNetworkManager}
+     * @param url The HTTP URL
+     * @param pdu The PDU to send
+     * @param method The HTTP method to use
+     * @param apn The APN setting to use
+     * @return The response data
+     * @throws MmsHttpException If there is any HTTP/network failure
+     */
+    protected byte[] doHttpForResolvedAddresses(Context context, MmsNetworkManager netMgr,
+            String url, byte[] pdu, int method, ApnSettings apn) throws MmsHttpException {
+        MmsHttpException lastException = null;
+        final ConnectivityManager connMgr =
+                (ConnectivityManager) context.getSystemService(Context.CONNECTIVITY_SERVICE);
+        // Do HTTP on all the addresses we can resolve to
+        for (final InetAddress address : resolveDestination(connMgr, netMgr, url, apn)) {
+            try {
+                // TODO: we have to use a deprecated API here because with the new
+                // ConnectivityManager APIs in LMP, we need to either use a bound process
+                // or a bound socket. The former can not be used since we share the
+                // phone process with others. The latter is not supported by any HTTP
+                // library yet. We have to rely on this API to get things work. Once
+                // a multinet aware HTTP lib is ready, we should switch to that and
+                // remove all the unnecessary code.
+                if (!connMgr.requestRouteToHostAddress(
+                        ConnectivityManager.TYPE_MOBILE_MMS, address)) {
+                    throw new MmsHttpException("MmsRequest: can not request a route for host "
+                            + address);
+                }
+                return HttpUtils.httpConnection(
+                        context,
+                        url,
+                        pdu,
+                        method,
+                        apn.isProxySet(),
+                        apn.getProxyAddress(),
+                        apn.getProxyPort(),
+                        netMgr,
+                        address instanceof Inet6Address);
+            } catch (MmsHttpException e) {
+                lastException = e;
+                Log.e(MmsService.TAG, "MmsRequest: failure in trying address " + address, e);
+            }
+        }
+        if (lastException != null) {
+            throw lastException;
+        } else {
+            // Should not reach here
+            throw new MmsHttpException("MmsRequest: unknown failure");
+        }
+    }
+
+    /**
+     * Resolve the name of the host we are about to connect to, which can be the URL host or
+     * the proxy host. We only resolve to the supported address types (IPv4 or IPv6 or both)
+     * based on the MMS network interface's address type, i.e. we only need addresses that
+     * match the link address type.
+     *
+     * @param connMgr The connectivity manager
+     * @param netMgr The current {@link MmsNetworkManager}
+     * @param url The HTTP URL
+     * @param apn The APN setting to use
+     * @return A list of matching resolved addresses
+     * @throws MmsHttpException For any network failure
+     */
+    private static List<InetAddress> resolveDestination(ConnectivityManager connMgr,
+            MmsNetworkManager netMgr, String url, ApnSettings apn) throws MmsHttpException {
+        Log.d(MmsService.TAG, "MmsRequest: resolve url " + url);
+        // Find the real host to connect to
+        String host = null;
+        if (apn.isProxySet()) {
+            host = apn.getProxyAddress();
+        } else {
+            final Uri uri = Uri.parse(url);
+            host = uri.getHost();
+        }
+        // Find out the link address types: ipv4 or ipv6 or both
+        final int addressTypes = getMmsLinkAddressTypes(connMgr, netMgr.getNetwork());
+        Log.d(MmsService.TAG, "MmsRequest: addressTypes=" + addressTypes);
+        // Resolve the host to a list of addresses based on supported address types
+        return resolveHostName(netMgr, host, addressTypes);
+    }
+
+    // Address type masks
+    private static final int ADDRESS_TYPE_IPV4 = 1;
+    private static final int ADDRESS_TYPE_IPV6 = 1 << 1;
+
+    /**
+     * Try to find out if we should use IPv6 or IPv4 for MMS. Basically we check if the MMS
+     * network interface has IPv6 address or not. If so, we will use IPv6. Otherwise, use
+     * IPv4.
+     *
+     * @param connMgr The connectivity manager
+     * @return A bit mask indicating what address types we have
+     */
+    private static int getMmsLinkAddressTypes(ConnectivityManager connMgr, Network network) {
+        int result = 0;
+        // Return none if network is not available
+        if (network == null) {
+            return result;
+        }
+        final LinkProperties linkProperties = connMgr.getLinkProperties(network);
+        if (linkProperties != null) {
+            for (InetAddress addr : linkProperties.getAddresses()) {
+                if (addr instanceof Inet4Address) {
+                    result |= ADDRESS_TYPE_IPV4;
+                } else if (addr instanceof Inet6Address) {
+                    result |= ADDRESS_TYPE_IPV6;
+                }
+            }
+        }
+        return result;
+    }
+
+    /**
+     * Resolve host name to address by specified address types.
+     *
+     * @param netMgr The current {@link MmsNetworkManager}
+     * @param host The host name
+     * @param addressTypes The required address type in a bit mask
+     *  (0x01: IPv4, 0x10: IPv6, 0x11: both)
+     * @return
+     * @throws MmsHttpException
+     */
+    private static List<InetAddress> resolveHostName(MmsNetworkManager netMgr, String host,
+            int addressTypes) throws MmsHttpException {
+        final List<InetAddress> resolved = new ArrayList<InetAddress>();
+        try {
+            if (addressTypes != 0) {
+                for (final InetAddress addr : netMgr.getAllByName(host)) {
+                    if ((addressTypes & ADDRESS_TYPE_IPV6) != 0
+                            && addr instanceof Inet6Address) {
+                        // Should use IPv6 and this is IPv6 address, add it
+                        resolved.add(addr);
+                    } else if ((addressTypes & ADDRESS_TYPE_IPV4) != 0
+                            && addr instanceof Inet4Address) {
+                        // Should use IPv4 and this is IPv4 address, add it
+                        resolved.add(addr);
+                    }
+                }
+            }
+            if (resolved.size() < 1) {
+                throw new MmsHttpException("Failed to resolve " + host
+                        + " for allowed address types: " + addressTypes);
+            }
+            return resolved;
+        } catch (final UnknownHostException e) {
+            throw new MmsHttpException("Failed to resolve " + host, e);
+        }
     }
 
     /**
@@ -202,11 +366,13 @@ public abstract class MmsRequest {
      * Making the HTTP request to MMSC
      *
      * @param context The context
+     * @param netMgr The current {@link MmsNetworkManager}
      * @param apn The APN setting
      * @return The HTTP response data
      * @throws MmsHttpException If any network error happens
      */
-    protected abstract byte[] doHttp(Context context, ApnSettings apn) throws MmsHttpException;
+    protected abstract byte[] doHttp(Context context, MmsNetworkManager netMgr, ApnSettings apn)
+            throws MmsHttpException;
 
     /**
      * @return The PendingIntent associate with the MMS sending invocation

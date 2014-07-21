@@ -58,15 +58,14 @@ public class SendRequest extends MmsRequest {
     }
 
     @Override
-    protected byte[] doHttp(Context context, ApnSettings apn) throws MmsHttpException {
-        return HttpUtils.httpConnection(
-                context,
+    protected byte[] doHttp(Context context, MmsNetworkManager netMgr, ApnSettings apn)
+            throws MmsHttpException {
+        return doHttpForResolvedAddresses(context,
+                netMgr,
                 mLocationUrl != null ? mLocationUrl : apn.getMmscUrl(),
                 mPdu,
                 HttpUtils.HTTP_POST_METHOD,
-                apn.isProxySet(),
-                apn.getProxyAddress(),
-                apn.getProxyPort());
+                apn);
     }
 
     @Override
@@ -84,6 +83,7 @@ public class SendRequest extends MmsRequest {
             Log.e(MmsService.TAG, "SendRequest.storeInOutbox: empty PDU");
             return;
         }
+        final long identity = Binder.clearCallingIdentity();
         try {
             if (mMessageUri == null) {
                 // This is a new message to send
@@ -134,6 +134,8 @@ public class SendRequest extends MmsRequest {
             Log.e(MmsService.TAG, "SendRequest.storeInOutbox: can not persist/update message", e);
         } catch (RuntimeException e) {
             Log.e(MmsService.TAG, "SendRequest.storeInOutbox: unexpected parsing failure", e);
+        } finally {
+            Binder.restoreCallingIdentity(identity);
         }
     }
 

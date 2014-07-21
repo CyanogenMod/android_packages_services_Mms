@@ -17,6 +17,8 @@
 package com.android.mms.service;
 
 import com.android.mms.service.exception.MmsHttpException;
+import com.android.mms.service.http.NameResolver;
+import com.android.mms.service.http.NetworkAwareHttpClient;
 
 import org.apache.http.Header;
 import org.apache.http.HttpEntity;
@@ -75,12 +77,15 @@ public class HttpUtils {
      * @param isProxySet If proxy is set
      * @param proxyHost The host of the proxy
      * @param proxyPort The port of the proxy
+     * @param resolver The custom name resolver to use
+     * @param useIpv6 If we should use IPv6 address when the HTTP client resolves the host name
      * @return A byte array which contains the response data.
      *         If an HTTP error code is returned, an IOException will be thrown.
      * @throws com.android.mms.service.exception.MmsHttpException if HTTP request gets error response (&gt;=400)
      */
     public static byte[] httpConnection(Context context, String url, byte[] pdu, int method,
-            boolean isProxySet, String proxyHost, int proxyPort) throws MmsHttpException {
+            boolean isProxySet, String proxyHost, int proxyPort, NameResolver resolver,
+            boolean useIpv6) throws MmsHttpException {
         final String methodString = getMethodString(method);
         if (Log.isLoggable(TAG, Log.VERBOSE)) {
             Log.v(TAG, "HttpUtils: request param list\n"
@@ -94,13 +99,13 @@ public class HttpUtils {
             Log.d(TAG, "HttpUtils: " + methodString + " " + url);
         }
 
-        AndroidHttpClient client = null;
+        NetworkAwareHttpClient client = null;
         try {
             // Make sure to use a proxy which supports CONNECT.
             URI hostUrl = new URI(url);
             HttpHost target = new HttpHost(hostUrl.getHost(), hostUrl.getPort(),
                     HttpHost.DEFAULT_SCHEME_NAME);
-            client = createHttpClient(context);
+            client = createHttpClient(context, resolver, useIpv6);
             HttpRequest req = null;
 
             switch (method) {
@@ -296,9 +301,11 @@ public class HttpUtils {
      * @param context
      * @return {@link android.net.http.AndroidHttpClient}
      */
-    private static AndroidHttpClient createHttpClient(Context context) {
+    private static NetworkAwareHttpClient createHttpClient(Context context, NameResolver resolver,
+            boolean useIpv6) {
         final String userAgent = MmsConfig.getUserAgent();
-        final AndroidHttpClient client = AndroidHttpClient.newInstance(userAgent, context);
+        final NetworkAwareHttpClient client = NetworkAwareHttpClient.newInstance(userAgent, context,
+                resolver, useIpv6);
         final HttpParams params = client.getParams();
         HttpProtocolParams.setContentCharset(params, "UTF-8");
 
