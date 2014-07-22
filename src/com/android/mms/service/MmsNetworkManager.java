@@ -51,8 +51,10 @@ public class MmsNetworkManager implements NameResolver {
     private int mMmsRequestCount;
 
     // This is really just for using the capability
-    private NetworkRequest mNetworkRequest = new NetworkRequest.Builder().addCapability(
-            NetworkCapabilities.NET_CAPABILITY_MMS).build();
+    private NetworkRequest mNetworkRequest = new NetworkRequest.Builder()
+            .addTransportType(NetworkCapabilities.TRANSPORT_CELLULAR)
+            .addCapability(NetworkCapabilities.NET_CAPABILITY_MMS)
+            .build();
 
     // The callback to register when we request MMS network
     private ConnectivityManager.NetworkCallback mNetworkCallback;
