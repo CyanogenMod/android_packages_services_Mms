@@ -18,14 +18,15 @@
           xmlns:androidprv="http://schemas.android.com/apk/prv/res/android"
           package="com.android.mms.service"
           coreApp="true"
-          android:sharedUserId="android.uid.system">
+          android:sharedUserId="android.uid.phone">
 
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.READ_SMS"/>
     <uses-permission android:name="android.permission.WRITE_SMS"/>
     <uses-permission android:name="android.permission.BROADCAST_WAP_PUSH"/>
 
-    <application android:label="MmsService">
+    <application android:label="MmsService"
+                 android:process="com.android.phone">
 
         <service android:name=".MmsService"
                  android:enabled="true"

@@ -57,15 +57,14 @@ public class DownloadRequest extends MmsRequest {
     }
 
     @Override
-    protected byte[] doHttp(Context context, ApnSettings apn) throws MmsHttpException {
-        return HttpUtils.httpConnection(
-                context,
+    protected byte[] doHttp(Context context, MmsNetworkManager netMgr, ApnSettings apn)
+            throws MmsHttpException {
+        return doHttpForResolvedAddresses(context,
+                netMgr,
                 mLocationUrl,
                 null/*pdu*/,
                 HttpUtils.HTTP_GET_METHOD,
-                apn.isProxySet(),
-                apn.getProxyAddress(),
-                apn.getProxyPort());
+                apn);
     }
 
     @Override

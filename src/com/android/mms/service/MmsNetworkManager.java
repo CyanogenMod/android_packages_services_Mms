@@ -17,6 +17,7 @@
 package com.android.mms.service;
 
 import com.android.mms.service.exception.MmsNetworkException;
+import com.android.mms.service.http.NameResolver;
 
 import android.content.Context;
 import android.net.ConnectivityManager;
@@ -26,10 +27,13 @@ import android.net.NetworkRequest;
 import android.os.SystemClock;
 import android.util.Log;
 
+import java.net.InetAddress;
+import java.net.UnknownHostException;
+
 /**
  * Manages the MMS network connectivity
  */
-public class MmsNetworkManager {
+public class MmsNetworkManager implements NameResolver {
     // Timeout used to call ConnectivityManager.requestNetwork
     private static final int NETWORK_REQUEST_TIMEOUT_MILLIS = 3 * 60 * 1000;
     // Wait timeout for this class, a little bit longer than the above timeout
@@ -58,6 +62,10 @@ public class MmsNetworkManager {
         mNetworkCallback = null;
         mNetwork = null;
         mMmsRequestCount = 0;
+    }
+
+    public Network getNetwork() {
+        return mNetwork;
     }
 
     /**
@@ -128,7 +136,6 @@ public class MmsNetworkManager {
                 Log.d(MmsService.TAG, "NetworkCallbackListener.onAvailable: network=" + network);
                 synchronized (MmsNetworkManager.this) {
                     mNetwork = network;
-                    ConnectivityManager.setProcessDefaultNetwork(mNetwork);
                     MmsNetworkManager.this.notifyAll();
                 }
             }
@@ -138,7 +145,6 @@ public class MmsNetworkManager {
                 super.onLost(network);
                 Log.d(MmsService.TAG, "NetworkCallbackListener.onLost: network=" + network);
                 synchronized (MmsNetworkManager.this) {
-                    ConnectivityManager.setProcessDefaultNetwork(null/*network*/);
                     releaseRequest(this);
                     if (mNetworkCallback == this) {
                         reset();
@@ -184,5 +190,13 @@ public class MmsNetworkManager {
         mNetworkCallback = null;
         mNetwork = null;
         mMmsRequestCount = 0;
+    }
+
+    @Override
+    public InetAddress[] getAllByName(String host) throws UnknownHostException {
+        if (mNetwork != null) {
+            return mNetwork.getAllByName(host);
+        }
+        return new InetAddress[0];
     }
 }
