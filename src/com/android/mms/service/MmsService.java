@@ -31,17 +31,12 @@ import com.google.android.mms.util.SqliteWrapper;
 import com.android.internal.telephony.IMms;
 import com.android.internal.telephony.SmsApplication;
 
-import android.Manifest;
 import android.app.Activity;
-import android.app.AppOpsManager;
 import android.app.PendingIntent;
 import android.app.Service;
 import android.content.ContentUris;
 import android.content.ContentValues;
-import android.content.Context;
 import android.content.Intent;
-import android.content.pm.PackageManager;
-import android.content.pm.ResolveInfo;
 import android.content.SharedPreferences;
 import android.database.Cursor;
 import android.database.sqlite.SQLiteException;
@@ -51,17 +46,15 @@ import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.IBinder;
 import android.os.Looper;
+import android.os.Process;
 import android.os.Message;
 import android.os.RemoteException;
-import android.os.ServiceManager;
 import android.provider.Telephony;
 import android.telephony.SmsManager;
-import android.telephony.TelephonyManager;
 import android.text.TextUtils;
 import android.util.Log;
 
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.List;
 
 /**
  * System service to process MMS API requests
@@ -72,8 +65,6 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
     public static final int QUEUE_INDEX_SEND = 0;
     public static final int QUEUE_INDEX_DOWNLOAD = 1;
 
-    private static final String SERVICE_NAME = "imms";
-
     private static final String SHARED_PREFERENCES_NAME = "mmspref";
     private static final String PREF_AUTO_PERSISTING = "autopersisting";
 
@@ -81,8 +72,6 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
     // TODO: persist this in case MmsService crashes
     private final ConcurrentHashMap<Integer, MmsRequest> mPendingRequests =
             new ConcurrentHashMap<Integer, MmsRequest>();
-
-    private AppOpsManager mAppOps;
 
     @Override
     public void addPending(int key, MmsRequest request) {
@@ -106,16 +95,18 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
         }
     }
 
+    private void enforceSystemUid() {
+        if (Binder.getCallingUid() != Process.SYSTEM_UID) {
+            throw new SecurityException("Only system can call this service");
+        }
+    }
+
     private IMms.Stub mStub = new IMms.Stub() {
         @Override
         public void sendMessage(long subId, String callingPkg, byte[] pdu, String locationUrl,
                 PendingIntent sentIntent) throws RemoteException {
             Log.d(TAG, "sendMessage");
-            enforceCallingPermission(Manifest.permission.SEND_SMS, "Sending MMS message");
-            if (mAppOps.noteOp(AppOpsManager.OP_SEND_SMS, Binder.getCallingUid(), callingPkg)
-                    != AppOpsManager.MODE_ALLOWED) {
-                return;
-            }
+            enforceSystemUid();
             final SendRequest request = new SendRequest(MmsService.this, subId, pdu,
                     null/*messageUri*/, locationUrl, sentIntent, callingPkg);
             if (SmsApplication.shouldWriteMessageForPackage(callingPkg, MmsService.this)) {
@@ -130,11 +121,7 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
         public void downloadMessage(long subId, String callingPkg, String locationUrl,
                 PendingIntent downloadedIntent) throws RemoteException {
             Log.d(TAG, "downloadMessage: " + locationUrl);
-            enforceCallingPermission(Manifest.permission.RECEIVE_MMS, "Downloading MMS message");
-            if (mAppOps.noteOp(AppOpsManager.OP_RECEIVE_MMS, Binder.getCallingUid(), callingPkg)
-                    != AppOpsManager.MODE_ALLOWED) {
-                return;
-            }
+            enforceSystemUid();
             final DownloadRequest request = new DownloadRequest(MmsService.this, subId, locationUrl,
                     downloadedIntent, callingPkg);
             // Try downloading via carrier app
@@ -144,7 +131,7 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
         @Override
         public void updateMmsSendStatus(int messageRef, boolean success) {
             Log.d(TAG, "updateMmsSendStatus: ref=" + messageRef + ", success=" + success);
-            enforceCarrierPrivilege();
+            enforceSystemUid();
             final MmsRequest request = mPendingRequests.get(messageRef);
             if (request != null) {
                 if (success) {
@@ -164,7 +151,7 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
         public void updateMmsDownloadStatus(int messageRef, byte[] pdu) {
             Log.d(TAG, "updateMmsDownloadStatus: ref=" + messageRef
                     + ", pdu=" + (pdu == null ? null : pdu.length));
-            enforceCarrierPrivilege();
+            enforceSystemUid();
             final MmsRequest request = mPendingRequests.get(messageRef);
             if (request != null) {
                 if (pdu != null) {
@@ -213,22 +200,14 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
         @Override
         public void setCarrierConfigBoolean(String callingPkg, String name, boolean value) {
             Log.d(TAG, "setCarrierConfig " + name);
-            enforceCallingPermission(Manifest.permission.SEND_SMS, "Setting MMS config");
-            if (mAppOps.noteOp(AppOpsManager.OP_SEND_SMS, Binder.getCallingUid(), callingPkg)
-                    != AppOpsManager.MODE_ALLOWED) {
-                return;
-            }
+            enforceSystemUid();
             MmsConfig.setValue(name, value);
         }
 
         @Override
         public void setCarrierConfigInt(String callingPkg, String name, int value) {
             Log.d(TAG, "setCarrierConfig " + name);
-            enforceCallingPermission(Manifest.permission.SEND_SMS, "Setting MMS config");
-            if (mAppOps.noteOp(AppOpsManager.OP_SEND_SMS, Binder.getCallingUid(), callingPkg)
-                    != AppOpsManager.MODE_ALLOWED) {
-                return;
-            }
+            enforceSystemUid();
             MmsConfig.setValue(name, value);
         }
 
@@ -238,11 +217,7 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
                 return;
             }
             Log.d(TAG, "setCarrierConfig " + name);
-            enforceCallingPermission(Manifest.permission.SEND_SMS, "Setting MMS config");
-            if (mAppOps.noteOp(AppOpsManager.OP_SEND_SMS, Binder.getCallingUid(), callingPkg)
-                    != AppOpsManager.MODE_ALLOWED) {
-                return;
-            }
+            enforceSystemUid();
             MmsConfig.setValue(name, value);
         }
 
@@ -250,11 +225,7 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
         public Uri importTextMessage(String callingPkg, String address, int type, String text,
                 long timestampMillis, boolean seen, boolean read) {
             Log.d(TAG, "importTextMessage");
-            enforceCallingPermission(Manifest.permission.WRITE_SMS, "Importing SMS message");
-            if (mAppOps.noteOp(AppOpsManager.OP_WRITE_SMS, Binder.getCallingUid(), callingPkg)
-                    != AppOpsManager.MODE_ALLOWED) {
-                return null;
-            }
+            enforceSystemUid();
             return importSms(address, type, text, timestampMillis, seen, read, callingPkg);
         }
 
@@ -262,11 +233,7 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
         public Uri importMultimediaMessage(String callingPkg, byte[] pdu, String messageId,
                 long timestampSecs, boolean seen, boolean read) {
             Log.d(TAG, "importMultimediaMessage");
-            enforceCallingPermission(Manifest.permission.WRITE_SMS, "Importing MMS message");
-            if (mAppOps.noteOp(AppOpsManager.OP_WRITE_SMS, Binder.getCallingUid(), callingPkg)
-                    != AppOpsManager.MODE_ALLOWED) {
-                return null;
-            }
+            enforceSystemUid();
             return importMms(pdu, messageId, timestampSecs, seen, read, callingPkg);
         }
 
@@ -274,11 +241,7 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
         public boolean deleteStoredMessage(String callingPkg, Uri messageUri)
                 throws RemoteException {
             Log.d(TAG, "deleteStoredMessage " + messageUri);
-            enforceCallingPermission(Manifest.permission.WRITE_SMS, "Deleting SMS/MMS message");
-            if (mAppOps.noteOp(AppOpsManager.OP_WRITE_SMS, Binder.getCallingUid(), callingPkg)
-                    != AppOpsManager.MODE_ALLOWED) {
-                return false;
-            }
+            enforceSystemUid();
             if (!isSmsMmsContentUri(messageUri)) {
                 Log.e(TAG, "deleteStoredMessage: invalid message URI: " + messageUri.toString());
                 return false;
@@ -302,11 +265,7 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
         public boolean deleteStoredConversation(String callingPkg, long conversationId)
                 throws RemoteException {
             Log.d(TAG, "deleteStoredConversation " + conversationId);
-            enforceCallingPermission(Manifest.permission.WRITE_SMS, "Importing thread");
-            if (mAppOps.noteOp(AppOpsManager.OP_WRITE_SMS, Binder.getCallingUid(), callingPkg)
-                    != AppOpsManager.MODE_ALLOWED) {
-                return false;
-            }
+            enforceSystemUid();
             if (conversationId == -1) {
                 Log.e(TAG, "deleteStoredConversation: invalid thread id");
                 return false;
@@ -331,7 +290,7 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
         public boolean updateStoredMessageStatus(String callingPkg, Uri messageUri,
                 ContentValues statusValues) throws RemoteException {
             Log.d(TAG, "updateStoredMessageStatus " + messageUri);
-            enforceCallingPermission(Manifest.permission.WRITE_SMS, "Updating SMS/MMS message");
+            enforceSystemUid();
             return updateMessageStatus(messageUri, statusValues);
         }
 
@@ -339,11 +298,7 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
         public Uri addTextMessageDraft(String callingPkg, String address, String text)
                 throws RemoteException {
             Log.d(TAG, "addTextMessageDraft");
-            enforceCallingPermission(Manifest.permission.WRITE_SMS, "Adding SMS draft");
-            if (mAppOps.noteOp(AppOpsManager.OP_WRITE_SMS, Binder.getCallingUid(), callingPkg)
-                    != AppOpsManager.MODE_ALLOWED) {
-                return null;
-            }
+            enforceSystemUid();
             return addSmsDraft(address, text, callingPkg);
         }
 
@@ -351,11 +306,7 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
         public Uri addMultimediaMessageDraft(String callingPkg, byte[] pdu)
                 throws RemoteException {
             Log.d(TAG, "addMultimediaMessageDraft");
-            enforceCallingPermission(Manifest.permission.WRITE_SMS, "Adding MMS draft");
-            if (mAppOps.noteOp(AppOpsManager.OP_WRITE_SMS, Binder.getCallingUid(), callingPkg)
-                    != AppOpsManager.MODE_ALLOWED) {
-                return null;
-            }
+            enforceSystemUid();
             return addMmsDraft(pdu, callingPkg);
         }
 
@@ -363,11 +314,7 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
         public void sendStoredMessage(long subId, String callingPkg, Uri messageUri,
                 PendingIntent sentIntent) throws RemoteException {
             Log.d(TAG, "sendStoredMessage " + messageUri);
-            enforceCallingPermission(Manifest.permission.SEND_SMS, "Sending stored MMS message");
-            if (mAppOps.noteOp(AppOpsManager.OP_SEND_SMS, Binder.getCallingUid(), callingPkg)
-                    != AppOpsManager.MODE_ALLOWED) {
-                return;
-            }
+            enforceSystemUid();
             // Only send a FAILED or DRAFT message
             if (!isFailedOrDraft(messageUri)) {
                 Log.e(TAG, "sendStoredMessage: not FAILED or DRAFT message");
@@ -390,32 +337,10 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
 
         }
 
-        /*
-         * Throws a security exception unless the caller has carrier privilege.
-         */
-        private void enforceCarrierPrivilege() {
-            PackageManager packageManager = getPackageManager();
-            String[] packages = packageManager.getPackagesForUid(Binder.getCallingUid());
-
-            TelephonyManager telephonyManager =
-                    (TelephonyManager) getSystemService(Context.TELEPHONY_SERVICE);
-            for (String pkg : packages) {
-                if (telephonyManager.checkCarrierPrivilegesForPackage(pkg) ==
-                        TelephonyManager.CARRIER_PRIVILEGE_STATUS_HAS_ACCESS) {
-                    return;
-                }
-            }
-            throw new SecurityException("No carrier privilege");
-        }
-
         @Override
         public void setAutoPersisting(String callingPkg, boolean enabled) throws RemoteException {
             Log.d(TAG, "setAutoPersisting " + enabled);
-            enforceCallingPermission(Manifest.permission.WRITE_SMS, "Set auto persist MMS message");
-            if (mAppOps.noteOp(AppOpsManager.OP_WRITE_SMS, Binder.getCallingUid(), callingPkg)
-                    != AppOpsManager.MODE_ALLOWED) {
-                return;
-            }
+            enforceSystemUid();
             final SharedPreferences preferences = getSharedPreferences(
                     SHARED_PREFERENCES_NAME, MODE_PRIVATE);
             final SharedPreferences.Editor editor = preferences.edit();
@@ -482,14 +407,9 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
     public void onCreate() {
         super.onCreate();
         Log.d(TAG, "onCreate");
-        // Register this service with ServiceManager so that the MMS API code
-        // can reference this service by name
-        ServiceManager.addService(SERVICE_NAME, this.asBinder());
         // Load mms_config
         // TODO (ywen): make sure we start request queues after mms_config is loaded
         MmsConfig.init(this);
-
-        mAppOps = (AppOpsManager) getSystemService(Context.APP_OPS_SERVICE);
     }
 
     private Uri importSms(String address, int type, String text, long timestampMillis,
