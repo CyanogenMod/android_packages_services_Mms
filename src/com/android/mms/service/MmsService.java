@@ -295,6 +295,17 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
         }
 
         @Override
+        public boolean archiveStoredConversation(String callingPkg, long conversationId,
+                boolean archived) throws RemoteException {
+            Log.d(TAG, "archiveStoredConversation " + conversationId + " " + archived);
+            if (conversationId == -1) {
+                Log.e(TAG, "archiveStoredConversation: invalid thread id");
+                return false;
+            }
+            return archiveConversation(conversationId, archived);
+        }
+
+        @Override
         public Uri addTextMessageDraft(String callingPkg, String address, String text)
                 throws RemoteException {
             Log.d(TAG, "addTextMessageDraft");
@@ -545,12 +556,6 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
                 // MMS uses the same column name
                 values.put(Telephony.Sms.SEEN, val);
             }
-        } else if (statusValues.containsKey(SmsManager.MESSAGE_STATUS_ARCHIVED)) {
-            final Integer val = statusValues.getAsInteger(SmsManager.MESSAGE_STATUS_ARCHIVED);
-            if (val != null) {
-                // MMS uses the same column name
-                values.put(Telephony.Sms.ARCHIVED, val);
-            }
         }
         if (values.size() < 1) {
             Log.w(TAG, "updateMessageStatus: no value to update");
@@ -566,6 +571,29 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
             return true;
         } catch (SQLiteException e) {
             Log.e(TAG, "updateMessageStatus: failed to update database", e);
+        } finally {
+            Binder.restoreCallingIdentity(identity);
+        }
+        return false;
+    }
+
+    private static final String ARCHIVE_CONVERSATION_SELECTION = Telephony.Threads._ID + "=?";
+    private boolean archiveConversation(long conversationId, boolean archived) {
+        final ContentValues values = new ContentValues(1);
+        values.put(Telephony.Threads.ARCHIVED, archived ? 1 : 0);
+        final long identity = Binder.clearCallingIdentity();
+        try {
+            if (getContentResolver().update(
+                    Telephony.Threads.CONTENT_URI,
+                    values,
+                    ARCHIVE_CONVERSATION_SELECTION,
+                    new String[] { Long.toString(conversationId)}) != 1) {
+                Log.e(TAG, "archiveConversation: failed to update database");
+                return false;
+            }
+            return true;
+        } catch (SQLiteException e) {
+            Log.e(TAG, "archiveConversation: failed to update database", e);
         } finally {
             Binder.restoreCallingIdentity(identity);
         }
