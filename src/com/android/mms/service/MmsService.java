@@ -246,6 +246,9 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
                 Log.e(TAG, "deleteStoredMessage: invalid message URI: " + messageUri.toString());
                 return false;
             }
+            // Clear the calling identity and query the database using the phone user id
+            // Otherwise the AppOps check in TelephonyProvider would complain about mismatch
+            // between the calling uid and the package uid
             final long identity = Binder.clearCallingIdentity();
             try {
                 if (getContentResolver().delete(
@@ -272,6 +275,9 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
             }
             final Uri uri = ContentUris.withAppendedId(
                     Telephony.Threads.CONTENT_URI, conversationId);
+            // Clear the calling identity and query the database using the phone user id
+            // Otherwise the AppOps check in TelephonyProvider would complain about mismatch
+            // between the calling uid and the package uid
             final long identity = Binder.clearCallingIdentity();
             try {
                 if (getContentResolver().delete(uri, null, null) != 1) {
@@ -448,6 +454,9 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
         if (!TextUtils.isEmpty(creator)) {
             values.put(Telephony.Mms.CREATOR, creator);
         }
+        // Clear the calling identity and query the database using the phone user id
+        // Otherwise the AppOps check in TelephonyProvider would complain about mismatch
+        // between the calling uid and the package uid
         final long identity = Binder.clearCallingIdentity();
         try {
             return getContentResolver().insert(insertUri, values);
@@ -465,6 +474,9 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
             Log.e(TAG, "importMessage: empty PDU");
             return null;
         }
+        // Clear the calling identity and query the database using the phone user id
+        // Otherwise the AppOps check in TelephonyProvider would complain about mismatch
+        // between the calling uid and the package uid
         final long identity = Binder.clearCallingIdentity();
         try {
             final GenericPdu pdu = (new PduParser(pduData)).parse();
@@ -561,6 +573,9 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
             Log.w(TAG, "updateMessageStatus: no value to update");
             return false;
         }
+        // Clear the calling identity and query the database using the phone user id
+        // Otherwise the AppOps check in TelephonyProvider would complain about mismatch
+        // between the calling uid and the package uid
         final long identity = Binder.clearCallingIdentity();
         try {
             if (getContentResolver().update(
@@ -581,6 +596,9 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
     private boolean archiveConversation(long conversationId, boolean archived) {
         final ContentValues values = new ContentValues(1);
         values.put(Telephony.Threads.ARCHIVED, archived ? 1 : 0);
+        // Clear the calling identity and query the database using the phone user id
+        // Otherwise the AppOps check in TelephonyProvider would complain about mismatch
+        // between the calling uid and the package uid
         final long identity = Binder.clearCallingIdentity();
         try {
             if (getContentResolver().update(
@@ -609,6 +627,9 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
         if (!TextUtils.isEmpty(creator)) {
             values.put(Telephony.Mms.CREATOR, creator);
         }
+        // Clear the calling identity and query the database using the phone user id
+        // Otherwise the AppOps check in TelephonyProvider would complain about mismatch
+        // between the calling uid and the package uid
         final long identity = Binder.clearCallingIdentity();
         try {
             return getContentResolver().insert(Telephony.Sms.Draft.CONTENT_URI, values);
@@ -625,6 +646,9 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
             Log.e(TAG, "addMmsDraft: empty PDU");
             return null;
         }
+        // Clear the calling identity and query the database using the phone user id
+        // Otherwise the AppOps check in TelephonyProvider would complain about mismatch
+        // between the calling uid and the package uid
         final long identity = Binder.clearCallingIdentity();
         try {
             final GenericPdu pdu = (new PduParser(pduData)).parse();
@@ -669,6 +693,10 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
     }
 
     private boolean isFailedOrDraft(Uri messageUri) {
+        // Clear the calling identity and query the database using the phone user id
+        // Otherwise the AppOps check in TelephonyProvider would complain about mismatch
+        // between the calling uid and the package uid
+        final long identity = Binder.clearCallingIdentity();
         Cursor cursor = null;
         try {
             cursor = getContentResolver().query(
@@ -688,11 +716,16 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
             if (cursor != null) {
                 cursor.close();
             }
+            Binder.restoreCallingIdentity(identity);
         }
         return false;
     }
 
     private byte[] loadPdu(Uri messageUri) {
+        // Clear the calling identity and query the database using the phone user id
+        // Otherwise the AppOps check in TelephonyProvider would complain about mismatch
+        // between the calling uid and the package uid
+        final long identity = Binder.clearCallingIdentity();
         try {
             final PduPersister persister = PduPersister.getPduPersister(this);
             final GenericPdu pdu = persister.load(messageUri);
@@ -706,6 +739,8 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
             Log.e(TAG, "loadPdu: failed to load PDU from " + messageUri.toString(), e);
         } catch (RuntimeException e) {
             Log.e(TAG, "loadPdu: failed to serialize PDU", e);
+        } finally {
+            Binder.restoreCallingIdentity(identity);
         }
         return null;
     }
