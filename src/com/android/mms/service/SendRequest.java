@@ -53,8 +53,9 @@ public class SendRequest extends MmsRequest {
     private final PendingIntent mSentIntent;
 
     public SendRequest(RequestManager manager, long subId, byte[] pdu, Uri messageUri,
-            String locationUrl, PendingIntent sentIntent, String creator) {
-        super(manager, messageUri, subId, creator);
+            String locationUrl, PendingIntent sentIntent, String creator,
+            ContentValues configOverrides) {
+        super(manager, messageUri, subId, creator, configOverrides);
         mPdu = pdu;
         mLocationUrl = locationUrl;
         mSentIntent = sentIntent;

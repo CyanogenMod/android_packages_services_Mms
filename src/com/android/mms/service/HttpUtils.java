@@ -79,13 +79,14 @@ public class HttpUtils {
      * @param proxyPort The port of the proxy
      * @param resolver The custom name resolver to use
      * @param useIpv6 If we should use IPv6 address when the HTTP client resolves the host name
+     * @param mmsConfig The MmsConfig to use
      * @return A byte array which contains the response data.
      *         If an HTTP error code is returned, an IOException will be thrown.
      * @throws com.android.mms.service.exception.MmsHttpException if HTTP request gets error response (&gt;=400)
      */
     public static byte[] httpConnection(Context context, String url, byte[] pdu, int method,
             boolean isProxySet, String proxyHost, int proxyPort, NameResolver resolver,
-            boolean useIpv6) throws MmsHttpException {
+            boolean useIpv6, MmsConfig.Overridden mmsConfig) throws MmsHttpException {
         final String methodString = getMethodString(method);
         if (Log.isLoggable(TAG, Log.VERBOSE)) {
             Log.v(TAG, "HttpUtils: request param list\n"
@@ -105,7 +106,7 @@ public class HttpUtils {
             URI hostUrl = new URI(url);
             HttpHost target = new HttpHost(hostUrl.getHost(), hostUrl.getPort(),
                     HttpHost.DEFAULT_SCHEME_NAME);
-            client = createHttpClient(context, resolver, useIpv6);
+            client = createHttpClient(context, resolver, useIpv6, mmsConfig);
             HttpRequest req = null;
 
             switch (method) {
@@ -133,8 +134,8 @@ public class HttpUtils {
             req.addHeader(HDR_KEY_ACCEPT, HDR_VALUE_ACCEPT);
 
             // UA Profile URL header
-            String xWapProfileTagName = MmsConfig.getUaProfTagName();
-            String xWapProfileUrl = MmsConfig.getUaProfUrl();
+            String xWapProfileTagName = mmsConfig.getUaProfTagName();
+            String xWapProfileUrl = mmsConfig.getUaProfUrl();
             if (xWapProfileUrl != null) {
                 if (Log.isLoggable(TAG, Log.VERBOSE)) {
                     Log.v(TAG, "HttpUtils: xWapProfUrl=" + xWapProfileUrl);
@@ -149,7 +150,7 @@ public class HttpUtils {
             // the value. And replace the occurrence of the string returned by
             // MmsConfig.getHttpParamsNaiKey() with the users NAI(Network Access Identifier)
             // inside the value.
-            String extraHttpParams = MmsConfig.getHttpParams();
+            String extraHttpParams = mmsConfig.getHttpParams();
 
             if (!TextUtils.isEmpty(extraHttpParams)) {
                 // Parse the parameter list
@@ -158,7 +159,7 @@ public class HttpUtils {
                     String splitPair[] = paramPair.split(":", 2);
                     if (splitPair.length == 2) {
                         final String name = splitPair[0].trim();
-                        final String value = resolveMacro(context, splitPair[1].trim());
+                        final String value = resolveMacro(context, splitPair[1].trim(), mmsConfig);
                         if (!TextUtils.isEmpty(name) && !TextUtils.isEmpty(value)) {
                             req.addHeader(name, value);
                         }
@@ -199,7 +200,7 @@ public class HttpUtils {
                     }
                     if (entity.isChunked()) {
                         Log.d(TAG, "HttpUtils: transfer encoding is chunked");
-                        int bytesTobeRead = MmsConfig.getMaxMessageSize();
+                        int bytesTobeRead = mmsConfig.getMaxMessageSize();
                         byte[] tempBody = new byte[bytesTobeRead];
                         DataInputStream dis = new DataInputStream(entity.getContent());
                         try {
@@ -302,15 +303,15 @@ public class HttpUtils {
      * @return {@link android.net.http.AndroidHttpClient}
      */
     private static NetworkAwareHttpClient createHttpClient(Context context, NameResolver resolver,
-            boolean useIpv6) {
-        final String userAgent = MmsConfig.getUserAgent();
+            boolean useIpv6, MmsConfig.Overridden mmsConfig) {
+        final String userAgent = mmsConfig.getUserAgent();
         final NetworkAwareHttpClient client = NetworkAwareHttpClient.newInstance(userAgent, context,
                 resolver, useIpv6);
         final HttpParams params = client.getParams();
         HttpProtocolParams.setContentCharset(params, "UTF-8");
 
         // set the socket timeout
-        int soTimeout = MmsConfig.getHttpSocketTimeout();
+        int soTimeout = mmsConfig.getHttpSocketTimeout();
 
         if (Log.isLoggable(TAG, Log.VERBOSE)) {
             Log.v(TAG, "HttpUtils: createHttpClient w/ socket timeout "
@@ -384,7 +385,8 @@ public class HttpUtils {
      * @param value The HTTP param value possibly containing macros
      * @return The HTTP param with macro resolved to real value
      */
-    private static String resolveMacro(Context context, String value) {
+    private static String resolveMacro(Context context, String value,
+            MmsConfig.Overridden mmsConfig) {
         if (TextUtils.isEmpty(value)) {
             return value;
         }
@@ -400,7 +402,7 @@ public class HttpUtils {
                 replaced.append(value.substring(nextStart, matchedStart));
             }
             final String macro = matcher.group(1);
-            final String macroValue = MmsConfig.getHttpParamMacro(context, macro);
+            final String macroValue = mmsConfig.getHttpParamMacro(context, macro);
             if (macroValue != null) {
                 replaced.append(macroValue);
             } else {

@@ -59,6 +59,7 @@ public class MmsNetworkManager implements NameResolver {
     // The callback to register when we request MMS network
     private ConnectivityManager.NetworkCallback mNetworkCallback;
 
+    // TODO: we need to re-architect this when we support MSIM, like maybe one manager for each SIM?
     public MmsNetworkManager(Context context) {
         mContext = context;
         mNetworkCallback = null;

@@ -23,6 +23,7 @@ import com.android.mms.service.exception.MmsNetworkException;
 import android.app.Activity;
 import android.app.PendingIntent;
 import android.content.BroadcastReceiver;
+import android.content.ContentValues;
 import android.content.Context;
 import android.content.Intent;
 import android.net.ConnectivityManager;
@@ -82,6 +83,8 @@ public abstract class MmsRequest {
     protected long mSubId;
     // The creator app
     protected String mCreator;
+    // MMS config
+    protected MmsConfig.Overridden mMmsConfig;
 
     // Intent result receiver for carrier app
     protected final BroadcastReceiver mCarrierAppResultReceiver = new BroadcastReceiver() {
@@ -116,11 +119,13 @@ public abstract class MmsRequest {
         }
     };
 
-    public MmsRequest(RequestManager requestManager, Uri messageUri, long subId, String creator) {
+    public MmsRequest(RequestManager requestManager, Uri messageUri, long subId, String creator,
+            ContentValues configOverrides) {
         mRequestManager = requestManager;
         mMessageUri = messageUri;
         mSubId = subId;
         mCreator = creator;
+        mMmsConfig = new MmsConfig.Overridden(MmsConfig.getInstance(), configOverrides);
     }
 
     /**
@@ -212,7 +217,8 @@ public abstract class MmsRequest {
                         apn.getProxyAddress(),
                         apn.getProxyPort(),
                         netMgr,
-                        address instanceof Inet6Address);
+                        address instanceof Inet6Address,
+                        mMmsConfig);
             } catch (MmsHttpException e) {
                 lastException = e;
                 Log.e(MmsService.TAG, "MmsRequest: failure in trying address " + address, e);

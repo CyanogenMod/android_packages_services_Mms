@@ -104,11 +104,11 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
     private IMms.Stub mStub = new IMms.Stub() {
         @Override
         public void sendMessage(long subId, String callingPkg, byte[] pdu, String locationUrl,
-                PendingIntent sentIntent) throws RemoteException {
+                ContentValues configOverrides, PendingIntent sentIntent) throws RemoteException {
             Log.d(TAG, "sendMessage");
             enforceSystemUid();
             final SendRequest request = new SendRequest(MmsService.this, subId, pdu,
-                    null/*messageUri*/, locationUrl, sentIntent, callingPkg);
+                    null/*messageUri*/, locationUrl, sentIntent, callingPkg, configOverrides);
             if (SmsApplication.shouldWriteMessageForPackage(callingPkg, MmsService.this)) {
                 // Store the message in outbox first before sending
                 request.storeInOutbox(MmsService.this);
@@ -119,11 +119,12 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
 
         @Override
         public void downloadMessage(long subId, String callingPkg, String locationUrl,
-                PendingIntent downloadedIntent) throws RemoteException {
+                ContentValues configOverrides, PendingIntent downloadedIntent)
+                throws RemoteException {
             Log.d(TAG, "downloadMessage: " + locationUrl);
             enforceSystemUid();
             final DownloadRequest request = new DownloadRequest(MmsService.this, subId, locationUrl,
-                    downloadedIntent, callingPkg);
+                    downloadedIntent, callingPkg, configOverrides);
             // Try downloading via carrier app
             request.tryDownloadingByCarrierApp(MmsService.this);
         }
@@ -168,9 +169,11 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
         }
 
         @Override
-        public boolean getCarrierConfigBoolean(String name, boolean defaultValue) {
+        public boolean getCarrierConfigBoolean(long subId, String name, boolean defaultValue) {
             Log.d(TAG, "getCarrierConfigBoolean " + name);
-            final Object value = MmsConfig.getValueAsType(name, MmsConfig.KEY_TYPE_BOOL);
+            // TODO: use subId to get specific mms config
+            final Object value = MmsConfig.getInstance()
+                    .getValueAsType(name, MmsConfig.KEY_TYPE_BOOL);
             if (value != null) {
                 return (Boolean)value;
             }
@@ -178,9 +181,11 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
         }
 
         @Override
-        public int getCarrierConfigInt(String name, int defaultValue) {
+        public int getCarrierConfigInt(long subId, String name, int defaultValue) {
             Log.d(TAG, "getCarrierConfigInt " + name);
-            final Object value = MmsConfig.getValueAsType(name, MmsConfig.KEY_TYPE_INT);
+            // TODO: use subId to get specific mms config
+            final Object value = MmsConfig.getInstance()
+                    .getValueAsType(name, MmsConfig.KEY_TYPE_INT);
             if (value != null) {
                 return (Integer)value;
             }
@@ -188,37 +193,15 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
         }
 
         @Override
-        public String getCarrierConfigString(String name, String defaultValue) {
+        public String getCarrierConfigString(long subId, String name, String defaultValue) {
             Log.d(TAG, "getCarrierConfigString " + name);
-            final Object value = MmsConfig.getValueAsType(name, MmsConfig.KEY_TYPE_STRING);
+            // TODO: use subId to get specific mms config
+            final Object value = MmsConfig.getInstance()
+                    .getValueAsType(name, MmsConfig.KEY_TYPE_STRING);
             if (value != null) {
                 return (String)value;
             }
             return defaultValue;
-        }
-
-        @Override
-        public void setCarrierConfigBoolean(String callingPkg, String name, boolean value) {
-            Log.d(TAG, "setCarrierConfig " + name);
-            enforceSystemUid();
-            MmsConfig.setValue(name, value);
-        }
-
-        @Override
-        public void setCarrierConfigInt(String callingPkg, String name, int value) {
-            Log.d(TAG, "setCarrierConfig " + name);
-            enforceSystemUid();
-            MmsConfig.setValue(name, value);
-        }
-
-        @Override
-        public void setCarrierConfigString(String callingPkg, String name, String value) {
-            if (value == null) {
-                return;
-            }
-            Log.d(TAG, "setCarrierConfig " + name);
-            enforceSystemUid();
-            MmsConfig.setValue(name, value);
         }
 
         @Override
@@ -329,7 +312,7 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
 
         @Override
         public void sendStoredMessage(long subId, String callingPkg, Uri messageUri,
-                PendingIntent sentIntent) throws RemoteException {
+                ContentValues configOverrides, PendingIntent sentIntent) throws RemoteException {
             Log.d(TAG, "sendStoredMessage " + messageUri);
             enforceSystemUid();
             // Only send a FAILED or DRAFT message
@@ -346,7 +329,7 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
                 return;
             }
             final SendRequest request = new SendRequest(MmsService.this, subId, pduData, messageUri,
-                    null/*locationUrl*/, sentIntent, callingPkg);
+                    null/*locationUrl*/, sentIntent, callingPkg, configOverrides);
             // Store the message in outbox first before sending
             request.storeInOutbox(MmsService.this);
             // Try sending via carrier app

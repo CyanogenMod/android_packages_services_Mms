@@ -16,6 +16,7 @@
 
 package com.android.mms.service;
 
+import android.content.ContentValues;
 import android.content.Context;
 import android.content.res.Configuration;
 import android.content.res.XmlResourceParser;
@@ -137,8 +138,6 @@ public class MmsConfig {
     // Default values. This is read-only. Don't write into it.
     // This provides the info on valid keys, their types and default values
     private static final Map<String, Object> DEFAULTS = new ConcurrentHashMap<String, Object>();
-    // The current values
-    private static final Map<String, Object> sKeyValues = new ConcurrentHashMap<String, Object>();
     static {
         DEFAULTS.put(CONFIG_ENABLED_MMS, Boolean.valueOf(true));
         DEFAULTS.put(CONFIG_ENABLED_TRANS_ID, Boolean.valueOf(false));
@@ -172,8 +171,11 @@ public class MmsConfig {
         DEFAULTS.put(CONFIG_NAI_SUFFIX, "");
     }
 
-    private static String mUserAgent = null;
-    private static String mUaProfUrl = null;
+    private static volatile MmsConfig sInstance = new MmsConfig();
+
+    public static MmsConfig getInstance() {
+        return sInstance;
+    }
 
     /**
      * Check a key and its type match the predefined keys and corresponding types
@@ -213,6 +215,12 @@ public class MmsConfig {
         return false;
     }
 
+    private String mUserAgent = null;
+    private String mUaProfUrl = null;
+
+    // The current values
+    private final Map<String, Object> mKeyValues = new ConcurrentHashMap<String, Object>();
+
     /**
      * Get a config value by its type
      *
@@ -220,23 +228,11 @@ public class MmsConfig {
      * @param type The type of the config value
      * @return The expected typed value or null if no match
      */
-    public static Object getValueAsType(String key, String type) {
+    public Object getValueAsType(String key, String type) {
         if (isValidKey(key, type)) {
-            return sKeyValues.get(key);
+            return mKeyValues.get(key);
         }
         return null;
-    }
-
-    /**
-     * Set a config value by its type (effected in memory, not persisted)
-     *
-     * @param key The key of the config
-     * @param value The value of the config
-     */
-    public static void setValue(String key, Object value) {
-        if (isValidValue(key, value)) {
-            sKeyValues.put(key, value);
-        }
     }
 
     public static void init(final Context context) {
@@ -246,158 +242,35 @@ public class MmsConfig {
                 Configuration configuration = context.getResources().getConfiguration();
                 // Always put the mnc/mcc in the log so we can tell which mms_config.xml was loaded.
                 Log.d(TAG, "MmsConfig: mnc/mcc: " + configuration.mcc + "/" + configuration.mnc);
-                loadMmsSettings(context);
+                getInstance().load(context);
             }
         }.start();
     }
 
-    private static String getNullableStringValue(String key) {
-        final Object value = sKeyValues.get(key);
+
+    private String getNullableStringValue(String key) {
+        final Object value = mKeyValues.get(key);
         if (value != null) {
             return (String) value;
         }
         return null;
     }
 
-    public static int getSmsToMmsTextThreshold() {
-        return (Integer) sKeyValues.get(CONFIG_SMS_TO_MMS_TEXT_THRESHOLD);
-    }
-
-    public static int getSmsToMmsTextLengthThreshold() {
-        return (Integer) sKeyValues.get(CONFIG_SMS_TO_MMS_TEXT_LENGTH_THRESHOLD);
-    }
-
-    public static boolean getMmsEnabled() {
-        return (Boolean) sKeyValues.get(CONFIG_ENABLED_MMS);
-    }
-
-    public static int getMaxMessageSize() {
-        return (Integer) sKeyValues.get(CONFIG_MAX_MESSAGE_SIZE);
-    }
-
-    public static boolean getTransIdEnabled() {
-        return (Boolean) sKeyValues.get(CONFIG_ENABLED_TRANS_ID);
-    }
-
-    public static String getUserAgent() {
-        return !TextUtils.isEmpty(mUserAgent) ?
-                mUserAgent : getNullableStringValue(CONFIG_USER_AGENT);
-    }
-
-    public static String getUaProfTagName() {
-        return getNullableStringValue(CONFIG_UA_PROF_TAG_NAME);
-    }
-
-    public static String getUaProfUrl() {
-        return !TextUtils.isEmpty(mUaProfUrl) ?
-                mUaProfUrl : getNullableStringValue(CONFIG_UA_PROF_URL);
-    }
-
-    public static String getHttpParams() {
-        return getNullableStringValue(CONFIG_HTTP_PARAMS);
-    }
-
-    public static String getEmailGateway() {
-        return getNullableStringValue(CONFIG_EMAIL_GATEWAY_NUMBER);
-    }
-
-    public static int getMaxImageHeight() {
-        return (Integer) sKeyValues.get(CONFIG_MAX_IMAGE_HEIGHT);
-    }
-
-    public static int getMaxImageWidth() {
-        return (Integer) sKeyValues.get(CONFIG_MAX_IMAGE_WIDTH);
-    }
-
-    public static int getRecipientLimit() {
-        final int limit = (Integer) sKeyValues.get(CONFIG_RECIPIENT_LIMIT);
-        return limit < 0 ? Integer.MAX_VALUE : limit;
-    }
-
-    public static int getMaxTextLimit() {
-        final int max = (Integer) sKeyValues.get(CONFIG_MAX_MESSAGE_TEXT_SIZE);
-        return max > -1 ? max : MAX_TEXT_LENGTH;
-    }
-
-    public static int getHttpSocketTimeout() {
-        return (Integer) sKeyValues.get(CONFIG_HTTP_SOCKET_TIMEOUT);
-    }
-
-    public static boolean getMultipartSmsEnabled() {
-        return (Boolean) sKeyValues.get(CONFIG_ENABLE_MULTIPART_SMS);
-    }
-
-    public static boolean getSendMultipartSmsAsSeparateMessages() {
-        return (Boolean) sKeyValues.get(CONFIG_SEND_MULTIPART_SMS_AS_SEPARATE_MESSAGES);
-    }
-
-    public static boolean getSMSDeliveryReportsEnabled() {
-        return (Boolean) sKeyValues.get(CONFIG_ENABLE_SMS_DELIVERY_REPORTS);
-    }
-
-    public static boolean getNotifyWapMMSC() {
-        return (Boolean) sKeyValues.get(CONFIG_ENABLED_NOTIFY_WAP_MMSC);
-    }
-
-    public static boolean isAliasEnabled() {
-        return (Boolean) sKeyValues.get(CONFIG_ALIAS_ENABLED);
-    }
-
-    public static int getAliasMinChars() {
-        return (Integer) sKeyValues.get(CONFIG_ALIAS_MIN_CHARS);
-    }
-
-    public static int getAliasMaxChars() {
-        return (Integer) sKeyValues.get(CONFIG_ALIAS_MAX_CHARS);
-    }
-
-    public static boolean getAllowAttachAudio() {
-        return (Boolean) sKeyValues.get(CONFIG_ALLOW_ATTACH_AUDIO);
-    }
-
-    public static int getMaxSubjectLength() {
-        return (Integer) sKeyValues.get(CONFIG_MAX_SUBJECT_LENGTH);
-    }
-
-    public static boolean getGroupMmsEnabled() {
-        return (Boolean) sKeyValues.get(CONFIG_ENABLE_GROUP_MMS);
-    }
-
-    public static boolean getSupportMmsContentDisposition() {
-        return (Boolean) sKeyValues.get(CONFIG_SUPPORT_MMS_CONTENT_DISPOSITION);
-    }
-
-    public static boolean getShowCellBroadcast() {
-        return (Boolean) sKeyValues.get(CONFIG_CELL_BROADCAST_APP_LINKS);
-    }
-
-    public static String getNaiSuffix() {
-        return getNullableStringValue(CONFIG_NAI_SUFFIX);
-    }
-
-    public static boolean isMmsReadReportsEnabled() {
-        return (Boolean) sKeyValues.get(CONFIG_ENABLE_MMS_READ_REPORTS);
-    }
-
-    public static boolean isMmsDeliveryReportsEnabled() {
-        return (Boolean) sKeyValues.get(CONFIG_ENABLE_MMS_DELIVERY_REPORTS);
-    }
-
-    public static void update(String key, String value, String type) {
+    private void update(String key, String value, String type) {
         try {
             if (KEY_TYPE_INT.equals(type)) {
-                sKeyValues.put(key, Integer.parseInt(value));
+                mKeyValues.put(key, Integer.parseInt(value));
             } else if (KEY_TYPE_BOOL.equals(type)) {
-                sKeyValues.put(key, Boolean.parseBoolean(value));
+                mKeyValues.put(key, Boolean.parseBoolean(value));
             } else if (KEY_TYPE_STRING.equals(type)){
-                sKeyValues.put(key, value);
+                mKeyValues.put(key, value);
             }
         } catch (NumberFormatException e) {
             Log.e(TAG, "MmsConfig.update: invalid " + key + "," + value + "," + type);
         }
     }
 
-    private static void loadDeviceUaSettings(Context context) {
+    private void loadDeviceUaSettings(Context context) {
         // load the MMS User agent and UaProfUrl from TelephonyManager APIs
         final TelephonyManager telephonyManager =
                 (TelephonyManager) context.getSystemService(Context.TELEPHONY_SERVICE);
@@ -405,19 +278,19 @@ public class MmsConfig {
         mUaProfUrl = telephonyManager.getMmsUAProfUrl();
     }
 
-    public static void loadMmsSettings(Context context) {
+    public void load(Context context) {
         // Load defaults
-        sKeyValues.clear();
-        sKeyValues.putAll(DEFAULTS);
+        mKeyValues.clear();
+        mKeyValues.putAll(DEFAULTS);
         // Load User-Agent and UA profile URL settings
         loadDeviceUaSettings(context);
         Log.d(TAG, "MmsConfig: mUserAgent=" + mUserAgent + ", mUaProfUrl=" + mUaProfUrl);
         // Load mms_config.xml resource overlays
         loadFromResources(context);
-        Log.v(TAG, "MmsConfig: all settings -- " + sKeyValues);
+        Log.v(TAG, "MmsConfig: all settings -- " + mKeyValues);
     }
 
-    private static void loadFromResources(Context context) {
+    private void loadFromResources(Context context) {
         Log.d(TAG, "MmsConfig.loadFromResources");
         final XmlResourceParser parser = context.getResources().getXml(R.xml.mms_config);
         final MmsConfigXmlProcessor processor = MmsConfigXmlProcessor.get(parser);
@@ -435,52 +308,222 @@ public class MmsConfig {
     }
 
     /**
-     * Return the HTTP param macro value.
-     * Example: LINE1 returns the phone number, etc.
-     *
-     * @param macro The macro name
-     * @return The value of the defined macro
+     * This class returns corresponding MmsConfig values which can be overridden by
+     * externally provided values.
      */
-    public static String getHttpParamMacro(Context context, String macro) {
-        if (MACRO_LINE1.equals(macro)) {
-            return getLine1(context);
-        } else if (MACRO_NAI.equals(macro)) {
-            return getNai();
-        }
-        return null;
-    }
+    public static class Overridden {
+        // The base MmsConfig
+        private final MmsConfig mBase;
+        // The overridden values
+        private final ContentValues mOverrides;
 
-    /**
-     * @return the phone number
-     */
-    private static String getLine1(Context context) {
-        final TelephonyManager telephonyManager = (TelephonyManager) context.getSystemService(
-                Context.TELEPHONY_SERVICE);
-        return telephonyManager.getLine1Number();
-    }
-
-    /**
-     * @return the NAI (Network Access Identifier) from SystemProperties
-     */
-    private static String getNai() {
-        String nai = SystemProperties.get("persist.radio.cdma.nai");
-        if (!TextUtils.isEmpty(nai)) {
-            String naiSuffix = MmsConfig.getNaiSuffix();
-            if (!TextUtils.isEmpty(naiSuffix)) {
-                nai = nai + naiSuffix;
-            }
-            byte[] encoded = null;
-            try {
-                encoded = Base64.encode(nai.getBytes("UTF-8"), Base64.NO_WRAP);
-            } catch (UnsupportedEncodingException e) {
-                encoded = Base64.encode(nai.getBytes(), Base64.NO_WRAP);
-            }
-            try {
-                nai = new String(encoded, "UTF-8");
-            } catch (UnsupportedEncodingException e) {
-                nai = new String(encoded);
-            }
+        public Overridden(MmsConfig base, ContentValues overrides) {
+            mBase = base;
+            mOverrides = overrides;
         }
-        return nai;
+
+        private int getInt(String key) {
+            final Integer value = mOverrides != null ? mOverrides.getAsInteger(key) : null;
+            if (value != null) {
+                return value;
+            }
+            return (Integer) mBase.mKeyValues.get(key);
+        }
+
+        private boolean getBoolean(String key) {
+            final Boolean value = mOverrides != null ? mOverrides.getAsBoolean(key) : null;
+            if (value != null) {
+                return value;
+            }
+            return (Boolean) mBase.mKeyValues.get(key);
+        }
+
+        private String getString(String key) {
+            if (mOverrides != null && mOverrides.containsKey(key)) {
+                return mOverrides.getAsString(key);
+            }
+            return mBase.getNullableStringValue(key);
+        }
+
+        public int getSmsToMmsTextThreshold() {
+            return getInt(CONFIG_SMS_TO_MMS_TEXT_THRESHOLD);
+        }
+
+        public int getSmsToMmsTextLengthThreshold() {
+            return getInt(CONFIG_SMS_TO_MMS_TEXT_LENGTH_THRESHOLD);
+        }
+
+        public boolean getMmsEnabled() {
+            return getBoolean(CONFIG_ENABLED_MMS);
+        }
+
+        public int getMaxMessageSize() {
+            return getInt(CONFIG_MAX_MESSAGE_SIZE);
+        }
+
+        public boolean getTransIdEnabled() {
+            return getBoolean(CONFIG_ENABLED_TRANS_ID);
+        }
+
+        public String getUserAgent() {
+            if (mOverrides != null && mOverrides.containsKey(CONFIG_USER_AGENT)) {
+                return mOverrides.getAsString(CONFIG_USER_AGENT);
+            }
+            return !TextUtils.isEmpty(mBase.mUserAgent) ?
+                    mBase.mUserAgent : mBase.getNullableStringValue(CONFIG_USER_AGENT);
+        }
+
+        public String getUaProfTagName() {
+            return getString(CONFIG_UA_PROF_TAG_NAME);
+        }
+
+        public String getUaProfUrl() {
+            if (mOverrides != null && mOverrides.containsKey(CONFIG_UA_PROF_URL)) {
+                return mOverrides.getAsString(CONFIG_UA_PROF_URL);
+            }
+            return !TextUtils.isEmpty(mBase.mUaProfUrl) ?
+                    mBase.mUaProfUrl : mBase.getNullableStringValue(CONFIG_UA_PROF_URL);
+        }
+
+        public String getHttpParams() {
+            return getString(CONFIG_HTTP_PARAMS);
+        }
+
+        public String getEmailGateway() {
+            return getString(CONFIG_EMAIL_GATEWAY_NUMBER);
+        }
+
+        public int getMaxImageHeight() {
+            return getInt(CONFIG_MAX_IMAGE_HEIGHT);
+        }
+
+        public int getMaxImageWidth() {
+            return getInt(CONFIG_MAX_IMAGE_WIDTH);
+        }
+
+        public int getRecipientLimit() {
+            final int limit = getInt(CONFIG_RECIPIENT_LIMIT);
+            return limit < 0 ? Integer.MAX_VALUE : limit;
+        }
+
+        public int getMaxTextLimit() {
+            final int max = getInt(CONFIG_MAX_MESSAGE_TEXT_SIZE);
+            return max > -1 ? max : MAX_TEXT_LENGTH;
+        }
+
+        public int getHttpSocketTimeout() {
+            return getInt(CONFIG_HTTP_SOCKET_TIMEOUT);
+        }
+
+        public boolean getMultipartSmsEnabled() {
+            return getBoolean(CONFIG_ENABLE_MULTIPART_SMS);
+        }
+
+        public boolean getSendMultipartSmsAsSeparateMessages() {
+            return getBoolean(CONFIG_SEND_MULTIPART_SMS_AS_SEPARATE_MESSAGES);
+        }
+
+        public boolean getSMSDeliveryReportsEnabled() {
+            return getBoolean(CONFIG_ENABLE_SMS_DELIVERY_REPORTS);
+        }
+
+        public boolean getNotifyWapMMSC() {
+            return getBoolean(CONFIG_ENABLED_NOTIFY_WAP_MMSC);
+        }
+
+        public boolean isAliasEnabled() {
+            return getBoolean(CONFIG_ALIAS_ENABLED);
+        }
+
+        public int getAliasMinChars() {
+            return getInt(CONFIG_ALIAS_MIN_CHARS);
+        }
+
+        public int getAliasMaxChars() {
+            return getInt(CONFIG_ALIAS_MAX_CHARS);
+        }
+
+        public boolean getAllowAttachAudio() {
+            return getBoolean(CONFIG_ALLOW_ATTACH_AUDIO);
+        }
+
+        public int getMaxSubjectLength() {
+            return getInt(CONFIG_MAX_SUBJECT_LENGTH);
+        }
+
+        public boolean getGroupMmsEnabled() {
+            return getBoolean(CONFIG_ENABLE_GROUP_MMS);
+        }
+
+        public boolean getSupportMmsContentDisposition() {
+            return getBoolean(CONFIG_SUPPORT_MMS_CONTENT_DISPOSITION);
+        }
+
+        public boolean getShowCellBroadcast() {
+            return getBoolean(CONFIG_CELL_BROADCAST_APP_LINKS);
+        }
+
+        public String getNaiSuffix() {
+            return getString(CONFIG_NAI_SUFFIX);
+        }
+
+        public boolean isMmsReadReportsEnabled() {
+            return getBoolean(CONFIG_ENABLE_MMS_READ_REPORTS);
+        }
+
+        public boolean isMmsDeliveryReportsEnabled() {
+            return getBoolean(CONFIG_ENABLE_MMS_DELIVERY_REPORTS);
+        }
+
+        /**
+         * Return the HTTP param macro value.
+         * Example: LINE1 returns the phone number, etc.
+         *
+         * @param macro The macro name
+         * @return The value of the defined macro
+         */
+        public String getHttpParamMacro(Context context, String macro) {
+            if (MACRO_LINE1.equals(macro)) {
+                return getLine1(context);
+            } else if (MACRO_NAI.equals(macro)) {
+                return getNai();
+            }
+            return null;
+        }
+
+        /**
+         * @return the phone number
+         */
+        private static String getLine1(Context context) {
+            // TODO: for MSIM, we will need to pass in the subId
+            final TelephonyManager telephonyManager = (TelephonyManager) context.getSystemService(
+                    Context.TELEPHONY_SERVICE);
+            return telephonyManager.getLine1Number();
+        }
+
+        /**
+         * @return the NAI (Network Access Identifier) from SystemProperties
+         */
+        private String getNai() {
+            String nai = SystemProperties.get("persist.radio.cdma.nai");
+            if (!TextUtils.isEmpty(nai)) {
+                String naiSuffix = getNaiSuffix();
+                if (!TextUtils.isEmpty(naiSuffix)) {
+                    nai = nai + naiSuffix;
+                }
+                byte[] encoded = null;
+                try {
+                    encoded = Base64.encode(nai.getBytes("UTF-8"), Base64.NO_WRAP);
+                } catch (UnsupportedEncodingException e) {
+                    encoded = Base64.encode(nai.getBytes(), Base64.NO_WRAP);
+                }
+                try {
+                    nai = new String(encoded, "UTF-8");
+                } catch (UnsupportedEncodingException e) {
+                    nai = new String(encoded);
+                }
+            }
+            return nai;
+        }
     }
 }
