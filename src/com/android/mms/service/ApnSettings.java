@@ -69,9 +69,10 @@ public class ApnSettings {
         }
         String selection = Telephony.Carriers.CURRENT + " IS NOT NULL";
         String[] selectionArgs = null;
+        apnName = apnName != null ? apnName.trim() : null;
         if (!TextUtils.isEmpty(apnName)) {
             selection += " AND " + Telephony.Carriers.APN + "=?";
-            selectionArgs = new String[]{ apnName.trim() };
+            selectionArgs = new String[]{ apnName };
         }
         Cursor cursor = null;
         try {
