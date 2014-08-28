@@ -186,7 +186,7 @@ public class SendRequest extends MmsRequest {
         TelephonyManager telephonyManager =
                 (TelephonyManager) context.getSystemService(Context.TELEPHONY_SERVICE);
         Intent intent = new Intent(Telephony.Mms.Intents.MMS_SEND_ACTION);
-        List<String> carrierPackages = telephonyManager.getCarrierPackageNamesForBroadcastIntent(
+        List<String> carrierPackages = telephonyManager.getCarrierPackageNamesForIntent(
                 intent);
 
         if (carrierPackages == null || carrierPackages.size() != 1) {

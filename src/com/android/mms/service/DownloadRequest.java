@@ -157,7 +157,7 @@ public class DownloadRequest extends MmsRequest {
         TelephonyManager telephonyManager =
                 (TelephonyManager) context.getSystemService(Context.TELEPHONY_SERVICE);
         Intent intent = new Intent(Telephony.Mms.Intents.MMS_DOWNLOAD_ACTION);
-        List<String> carrierPackages = telephonyManager.getCarrierPackageNamesForBroadcastIntent(
+        List<String> carrierPackages = telephonyManager.getCarrierPackageNamesForIntent(
                 intent);
 
         if (carrierPackages == null || carrierPackages.size() != 1) {
