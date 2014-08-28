@@ -35,28 +35,46 @@ import android.content.Intent;
 import android.database.sqlite.SQLiteException;
 import android.net.Uri;
 import android.os.Binder;
+import android.os.ParcelFileDescriptor;
 import android.os.UserHandle;
 import android.provider.Settings;
 import android.provider.Telephony;
+import android.telephony.SmsManager;
 import android.telephony.TelephonyManager;
 import android.text.TextUtils;
 import android.util.Log;
 
+import java.io.IOException;
+import java.util.Arrays;
 import java.util.List;
+import java.util.concurrent.Callable;
 
 /**
  * Request to send an MMS
  */
 public class SendRequest extends MmsRequest {
-    private final byte[] mPdu;
+    private Uri mPduUri;
+    private byte[] mPduData;
     private final String mLocationUrl;
     private final PendingIntent mSentIntent;
 
-    public SendRequest(RequestManager manager, long subId, byte[] pdu, Uri messageUri,
+    public SendRequest(RequestManager manager, long subId, Uri contentUri, Uri messageUri,
             String locationUrl, PendingIntent sentIntent, String creator,
             ContentValues configOverrides) {
         super(manager, messageUri, subId, creator, configOverrides);
-        mPdu = pdu;
+        mPduUri = contentUri;
+        mPduData = null;
+        mLocationUrl = locationUrl;
+        mSentIntent = sentIntent;
+    }
+
+    // Constructor used when pdu bytes have already been loaded into process
+    public SendRequest(RequestManager manager, long subId, byte[] pduData, Uri messageUri,
+            String locationUrl, PendingIntent sentIntent, String creator,
+            ContentValues configOverrides) {
+        super(manager, messageUri, subId, creator, configOverrides);
+        mPduUri = null;
+        mPduData = pduData;
         mLocationUrl = locationUrl;
         mSentIntent = sentIntent;
     }
@@ -67,7 +85,7 @@ public class SendRequest extends MmsRequest {
         return doHttpForResolvedAddresses(context,
                 netMgr,
                 mLocationUrl != null ? mLocationUrl : apn.getMmscUrl(),
-                mPdu,
+                mPduData,
                 HttpUtils.HTTP_POST_METHOD,
                 apn);
     }
@@ -83,15 +101,16 @@ public class SendRequest extends MmsRequest {
     }
 
     public void storeInOutbox(Context context) {
-        if (mPdu == null) {
-            Log.e(MmsService.TAG, "SendRequest.storeInOutbox: empty PDU");
-            return;
-        }
         final long identity = Binder.clearCallingIdentity();
         try {
+            // Read message using phone process identity
+            if (!readPduFromContentUri()) {
+                Log.e(MmsService.TAG, "SendRequest.storeInOutbox: empty PDU");
+                return;
+            }
             if (mMessageUri == null) {
                 // This is a new message to send
-                final GenericPdu pdu = (new PduParser(mPdu)).parse();
+                final GenericPdu pdu = (new PduParser(mPduData)).parse();
                 if (pdu == null) {
                     Log.e(MmsService.TAG, "SendRequest.storeInOutbox: can't parse input PDU");
                     return;
@@ -145,6 +164,21 @@ public class SendRequest extends MmsRequest {
         }
     }
 
+    /**
+     * Read the pdu from the file desciptor and cache pdu bytes in request
+     * @return true if pdu read successfully
+     */
+    private boolean readPduFromContentUri() {
+        final Uri contentUri = mPduUri;
+        if (contentUri != null) {
+            // Only try to read the file once
+            mPduUri = null;
+            final int bytesTobeRead = mMmsConfig.getMaxMessageSize();
+            mPduData = mRequestManager.readPduFromContentUri(contentUri, bytesTobeRead);
+        }
+        return (mPduData != null);
+    }
+
     @Override
     protected void updateStatus(Context context, int result, byte[] response) {
         if (mMessageUri == null) {
@@ -180,6 +214,30 @@ public class SendRequest extends MmsRequest {
     }
 
     /**
+     * Transfer the received response to the caller (for send requests the pdu is small and can
+     *  just include bytes as extra in the "returned" intent).
+     *
+     * @param fillIn the intent that will be returned to the caller
+     * @param response the pdu to transfer
+     */
+    @Override
+    protected boolean transferResponse(Intent fillIn, byte[] response) {
+        // SendConf pdus are always small and can be included in the intent
+        if (response != null) {
+            fillIn.putExtra(SmsManager.MMS_EXTRA_DATA, response);
+        }
+        return true;
+    }
+
+    /**
+     * Read the data from the file descriptor if not yet done
+     * @return whether data successfully read
+     */
+    protected boolean prepareForHttpRequest() {
+        return readPduFromContentUri();
+    }
+
+    /**
      * Try sending via the carrier app by sending an intent
      *
      * @param context The context
@@ -194,8 +252,10 @@ public class SendRequest extends MmsRequest {
         if (carrierPackages == null || carrierPackages.size() != 1) {
             mRequestManager.addRunning(this);
         } else {
+            // TODO: Can't send PDU via intent - it's too big
+            readPduFromContentUri();
             intent.setPackage(carrierPackages.get(0));
-            intent.putExtra("pdu", mPdu);
+            intent.putExtra("pdu", mPduData);
             intent.putExtra("url", mLocationUrl);
             intent.addFlags(Intent.FLAG_RECEIVER_NO_ABORT);
             context.sendOrderedBroadcastAsUser(

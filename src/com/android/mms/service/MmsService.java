@@ -34,8 +34,10 @@ import com.android.internal.telephony.SmsApplication;
 import android.app.Activity;
 import android.app.PendingIntent;
 import android.app.Service;
+import android.content.ContentResolver;
 import android.content.ContentUris;
 import android.content.ContentValues;
+import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.database.Cursor;
@@ -47,6 +49,7 @@ import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.IBinder;
 import android.os.Looper;
+import android.os.ParcelFileDescriptor;
 import android.os.Process;
 import android.os.Message;
 import android.os.RemoteException;
@@ -55,7 +58,14 @@ import android.telephony.SmsManager;
 import android.text.TextUtils;
 import android.util.Log;
 
+import java.io.IOException;
+import java.util.Arrays;
+import java.util.concurrent.Callable;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 /**
  * System service to process MMS API requests
@@ -69,10 +79,19 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
     private static final String SHARED_PREFERENCES_NAME = "mmspref";
     private static final String PREF_AUTO_PERSISTING = "autopersisting";
 
+    // Maximum time to spend waiting to read data from a content provider before failing with error.
+    private static final int TASK_TIMEOUT_MS = 30 * 1000;
+    // Maximum size of MMS service supports - used on occassions when MMS messages are processed
+    // in a carrier independent manner (for example for imports and drafts) and the carrier
+    // specific size limit should not be used (as it could be lower on some carriers).
+    private static final int MAX_MMS_FILE_SIZE = 8 * 1024 * 1024;
+
     // Pending requests that are currently executed by carrier app
     // TODO: persist this in case MmsService crashes
     private final ConcurrentHashMap<Integer, MmsRequest> mPendingRequests =
             new ConcurrentHashMap<Integer, MmsRequest>();
+
+    private final ExecutorService mExecutor = Executors.newCachedThreadPool();
 
     @Override
     public void addPending(int key, MmsRequest request) {
@@ -104,11 +123,12 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
 
     private IMms.Stub mStub = new IMms.Stub() {
         @Override
-        public void sendMessage(long subId, String callingPkg, byte[] pdu, String locationUrl,
-                ContentValues configOverrides, PendingIntent sentIntent) throws RemoteException {
+        public void sendMessage(long subId, String callingPkg, Uri contentUri,
+                String locationUrl, ContentValues configOverrides, PendingIntent sentIntent)
+                        throws RemoteException {
             Log.d(TAG, "sendMessage");
             enforceSystemUid();
-            final SendRequest request = new SendRequest(MmsService.this, subId, pdu,
+            final SendRequest request = new SendRequest(MmsService.this, subId, contentUri,
                     null/*messageUri*/, locationUrl, sentIntent, callingPkg, configOverrides);
             if (SmsApplication.shouldWriteMessageForPackage(callingPkg, MmsService.this)) {
                 // Store the message in outbox first before sending
@@ -120,12 +140,12 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
 
         @Override
         public void downloadMessage(long subId, String callingPkg, String locationUrl,
-                ContentValues configOverrides, PendingIntent downloadedIntent)
-                throws RemoteException {
+                Uri contentUri, ContentValues configOverrides,
+                PendingIntent downloadedIntent) throws RemoteException {
             Log.d(TAG, "downloadMessage: " + locationUrl);
             enforceSystemUid();
-            final DownloadRequest request = new DownloadRequest(MmsService.this, subId, locationUrl,
-                    downloadedIntent, callingPkg, configOverrides);
+            final DownloadRequest request = new DownloadRequest(MmsService.this, subId,
+                    locationUrl, contentUri, downloadedIntent, callingPkg, configOverrides);
             // Try downloading via carrier app
             request.tryDownloadingByCarrierApp(MmsService.this);
         }
@@ -149,6 +169,7 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
             }
         }
 
+        // TODO(juliano): Move carrier package API to use content uris
         @Override
         public void updateMmsDownloadStatus(int messageRef, byte[] pdu) {
             Log.d(TAG, "updateMmsDownloadStatus: ref=" + messageRef
@@ -188,11 +209,11 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
         }
 
         @Override
-        public Uri importMultimediaMessage(String callingPkg, byte[] pdu, String messageId,
-                long timestampSecs, boolean seen, boolean read) {
+        public Uri importMultimediaMessage(String callingPkg, Uri contentUri,
+                String messageId, long timestampSecs, boolean seen, boolean read) {
             Log.d(TAG, "importMultimediaMessage");
             enforceSystemUid();
-            return importMms(pdu, messageId, timestampSecs, seen, read, callingPkg);
+            return importMms(contentUri, messageId, timestampSecs, seen, read, callingPkg);
         }
 
         @Override
@@ -278,11 +299,11 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
         }
 
         @Override
-        public Uri addMultimediaMessageDraft(String callingPkg, byte[] pdu)
+        public Uri addMultimediaMessageDraft(String callingPkg, Uri contentUri)
                 throws RemoteException {
             Log.d(TAG, "addMultimediaMessageDraft");
             enforceSystemUid();
-            return addMmsDraft(pdu, callingPkg);
+            return addMmsDraft(contentUri, callingPkg);
         }
 
         @Override
@@ -303,8 +324,8 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
                 returnUnspecifiedFailure(sentIntent);
                 return;
             }
-            final SendRequest request = new SendRequest(MmsService.this, subId, pduData, messageUri,
-                    null/*locationUrl*/, sentIntent, callingPkg, configOverrides);
+            final SendRequest request = new SendRequest(MmsService.this, subId, pduData,
+                    messageUri, null/*locationUrl*/, sentIntent, callingPkg, configOverrides);
             // Store the message in outbox first before sending
             request.storeInOutbox(MmsService.this);
             // Try sending via carrier app
@@ -426,8 +447,9 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
         return null;
     }
 
-    private Uri importMms(byte[] pduData, String messageId, long timestampSecs,
+    private Uri importMms(Uri contentUri, String messageId, long timestampSecs,
             boolean seen, boolean read, String creator) {
+        byte[] pduData = readPduFromContentUri(contentUri, MAX_MMS_FILE_SIZE);
         if (pduData == null || pduData.length < 1) {
             Log.e(TAG, "importMessage: empty PDU");
             return null;
@@ -599,7 +621,8 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
         return null;
     }
 
-    private Uri addMmsDraft(byte[] pduData, String creator) {
+    private Uri addMmsDraft(Uri contentUri, String creator) {
+        byte[] pduData = readPduFromContentUri(contentUri, MAX_MMS_FILE_SIZE);
         if (pduData == null || pduData.length < 1) {
             Log.e(TAG, "addMmsDraft: empty PDU");
             return null;
@@ -718,5 +741,97 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
         final SharedPreferences preferences = getSharedPreferences(
                 SHARED_PREFERENCES_NAME, MODE_PRIVATE);
         return preferences.getBoolean(PREF_AUTO_PERSISTING, false);
+    }
+
+    /**
+     * Read pdu from content provider uri
+     * @param contentUri content provider uri from which to read
+     * @param maxSize maximum number of bytes to read
+     * @return pdu bytes if succeeded else null
+     */
+    public byte[] readPduFromContentUri(final Uri contentUri, final int maxSize) {
+        Callable<byte[]> copyPduToArray = new Callable<byte[]>() {
+            public byte[] call() {
+                ParcelFileDescriptor.AutoCloseInputStream inStream = null;
+                try {
+                    ContentResolver cr = MmsService.this.getContentResolver();
+                    ParcelFileDescriptor pduFd = cr.openFileDescriptor(contentUri, "r");
+                    inStream = new ParcelFileDescriptor.AutoCloseInputStream(pduFd);
+                    // Request one extra byte to make sure file not bigger than maxSize
+                    byte[] tempBody = new byte[maxSize+1];
+                    int bytesRead = inStream.read(tempBody, 0, maxSize+1);
+                    if (bytesRead == 0) {
+                        Log.e(MmsService.TAG, "MmsService.readPduFromContentUri: empty PDU");
+                        return null;
+                    }
+                    if (bytesRead <= maxSize) {
+                        return Arrays.copyOf(tempBody, bytesRead);
+                    }
+                    Log.e(MmsService.TAG, "MmsService.readPduFromContentUri: PDU too large");
+                    return null;
+                } catch (IOException ex) {
+                    Log.e(MmsService.TAG,
+                            "MmsService.readPduFromContentUri: IO exception reading PDU", ex);
+                    return null;
+                } finally {
+                    if (inStream != null) {
+                        try {
+                            inStream.close();
+                        } catch (IOException ex) {
+                        }
+                    }
+                }
+            }
+        };
+
+        Future<byte[]> pendingResult = mExecutor.submit(copyPduToArray);
+        try {
+            byte[] pdu = pendingResult.get(TASK_TIMEOUT_MS, TimeUnit.MILLISECONDS);
+            return pdu;
+        } catch (Exception e) {
+            // Typically a timeout occurred - cancel task
+            pendingResult.cancel(true);
+        }
+        return null;
+    }
+
+    /**
+     * Write pdu bytes to content provider uri
+     * @param contentUri content provider uri to which bytes should be written
+     * @param pdu Bytes to write
+     * @return true if all bytes successfully written else false
+     */
+    public boolean writePduToContentUri(final Uri contentUri, final byte[] pdu) {
+        Callable<Boolean> copyDownloadedPduToOutput = new Callable<Boolean>() {
+            public Boolean call() {
+                ParcelFileDescriptor.AutoCloseOutputStream outStream = null;
+                try {
+                    ContentResolver cr = MmsService.this.getContentResolver();
+                    ParcelFileDescriptor pduFd = cr.openFileDescriptor(contentUri, "w");
+                    outStream = new ParcelFileDescriptor.AutoCloseOutputStream(pduFd);
+                    outStream.write(pdu);
+                    return Boolean.TRUE;
+                } catch (IOException ex) {
+                    return Boolean.FALSE;
+                } finally {
+                    if (outStream != null) {
+                        try {
+                            outStream.close();
+                        } catch (IOException ex) {
+                        }
+                    }
+                }
+            }
+        };
+
+        Future<Boolean> pendingResult = mExecutor.submit(copyDownloadedPduToOutput);
+        try {
+            Boolean succeeded = pendingResult.get(TASK_TIMEOUT_MS, TimeUnit.MILLISECONDS);
+            return succeeded == Boolean.TRUE;
+        } catch (Exception e) {
+            // Typically a timeout occurred - cancel task
+            pendingResult.cancel(true);
+        }
+        return false;
     }
 }

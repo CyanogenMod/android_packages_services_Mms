@@ -33,14 +33,19 @@ import android.content.ContentValues;
 import android.content.Context;
 import android.content.Intent;
 import android.database.sqlite.SQLiteException;
+import android.net.Uri;
 import android.os.Binder;
+import android.os.ParcelFileDescriptor;
 import android.os.UserHandle;
 import android.provider.Telephony;
 import android.telephony.TelephonyManager;
 import android.text.TextUtils;
 import android.util.Log;
 
+import java.io.IOException;
 import java.util.List;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutorService;
 
 /**
  * Request to download an MMS
@@ -51,12 +56,15 @@ public class DownloadRequest extends MmsRequest {
 
     private final String mLocationUrl;
     private final PendingIntent mDownloadedIntent;
+    private final Uri mContentUri;
 
     public DownloadRequest(RequestManager manager, long subId, String locationUrl,
-            PendingIntent downloadedIntent, String creator, ContentValues configOverrides) {
+            Uri contentUri, PendingIntent downloadedIntent, String creator,
+            ContentValues configOverrides) {
         super(manager, null/*messageUri*/, subId, creator, configOverrides);
         mLocationUrl = locationUrl;
         mDownloadedIntent = downloadedIntent;
+        mContentUri = contentUri;
     }
 
     @Override
@@ -85,6 +93,17 @@ public class DownloadRequest extends MmsRequest {
         if (mRequestManager.getAutoPersistingPref()) {
             storeInboxMessage(context, result, response);
         }
+    }
+
+    /**
+     * Transfer the received response to the caller (for download requests write to content uri)
+     *
+     * @param fillIn the intent that will be returned to the caller
+     * @param response the pdu to transfer
+     */
+    @Override
+    protected boolean transferResponse(Intent fillIn, final byte[] response) {
+        return mRequestManager.writePduToContentUri(mContentUri, response);
     }
 
     private void storeInboxMessage(Context context, int result, byte[] response) {
@@ -147,6 +166,10 @@ public class DownloadRequest extends MmsRequest {
         } finally {
             Binder.restoreCallingIdentity(identity);
         }
+    }
+
+    protected boolean prepareForHttpRequest() {
+        return true;
     }
 
     /**
