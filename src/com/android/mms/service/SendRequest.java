@@ -111,13 +111,14 @@ public class SendRequest extends MmsRequest {
                     Log.e(MmsService.TAG, "SendRequest.storeInOutbox: can not persist message");
                     return;
                 }
-                final ContentValues values = new ContentValues(4);
+                final ContentValues values = new ContentValues(5);
                 values.put(Telephony.Mms.DATE, System.currentTimeMillis() / 1000L);
                 values.put(Telephony.Mms.READ, 1);
                 values.put(Telephony.Mms.SEEN, 1);
                 if (!TextUtils.isEmpty(mCreator)) {
                     values.put(Telephony.Mms.CREATOR, mCreator);
                 }
+                values.put(Telephony.Mms.SUB_ID, mSubId);
                 if (SqliteWrapper.update(context, context.getContentResolver(), mMessageUri, values,
                         null/*where*/, null/*selectionArg*/) != 1) {
                     Log.e(MmsService.TAG, "SendRequest.storeInOutbox: failed to update message");
@@ -125,10 +126,11 @@ public class SendRequest extends MmsRequest {
             } else {
                 // This is a stored message, either in FAILED or DRAFT
                 // Move this to OUTBOX for sending
-                final ContentValues values = new ContentValues(2);
+                final ContentValues values = new ContentValues(3);
                 // Reset the timestamp
                 values.put(Telephony.Mms.DATE, System.currentTimeMillis() / 1000L);
                 values.put(Telephony.Mms.MESSAGE_BOX, Telephony.Mms.MESSAGE_BOX_OUTBOX);
+                values.put(Telephony.Mms.SUB_ID, mSubId);
                 if (SqliteWrapper.update(context, context.getContentResolver(), mMessageUri, values,
                         null/*where*/, null/*selectionArg*/) != 1) {
                     Log.e(MmsService.TAG, "SendRequest.storeInOutbox: failed to update message");

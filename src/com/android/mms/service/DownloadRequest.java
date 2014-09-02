@@ -111,13 +111,14 @@ public class DownloadRequest extends MmsRequest {
                 return;
             }
             // Update some of the properties of the message
-            ContentValues values = new ContentValues(4);
+            ContentValues values = new ContentValues(5);
             values.put(Telephony.Mms.DATE, System.currentTimeMillis() / 1000L);
             values.put(Telephony.Mms.READ, 0);
             values.put(Telephony.Mms.SEEN, 0);
             if (!TextUtils.isEmpty(mCreator)) {
                 values.put(Telephony.Mms.CREATOR, mCreator);
             }
+            values.put(Telephony.Mms.SUB_ID, mSubId);
             if (SqliteWrapper.update(
                     context,
                     context.getContentResolver(),

@@ -19,6 +19,7 @@ package com.android.mms.service;
 import android.content.ContentValues;
 import android.content.Context;
 import android.content.res.XmlResourceParser;
+import android.os.Bundle;
 import android.os.SystemProperties;
 import android.telephony.TelephonyManager;
 import android.text.TextUtils;
@@ -26,6 +27,7 @@ import android.util.Base64;
 import android.util.Log;
 
 import java.io.UnsupportedEncodingException;
+import java.util.Iterator;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -49,7 +51,8 @@ public class MmsConfig {
     private static final int MAX_TEXT_LENGTH = 2000;
 
     /*
-     * MmsConfig keys
+     * MmsConfig keys. These have to stay in sync with the MMS_CONFIG_* values defined in
+     * SmsManager.
      */
     public static final String CONFIG_ENABLED_MMS = "enabledMMS";
     // In case of single segment wap push message, this CONFIG_ENABLED_TRANS_ID indicates whether
@@ -259,6 +262,26 @@ public class MmsConfig {
         return null;
     }
 
+    public Bundle getCarrierConfigValues() {
+        // FLAG: doesn't handle overrides!
+        final Bundle bundle = new Bundle();
+        final Iterator<Map.Entry<String, Object>> iter = mKeyValues.entrySet().iterator();
+        while(iter.hasNext()) {
+            final Map.Entry<String, Object> entry = iter.next();
+            final String key = entry.getKey();
+            final Object val = entry.getValue();
+            Class<?> valueType =  val != null ? val.getClass() : String.class;
+            if (valueType == Integer.class) {
+                bundle.putInt(key, (int)val);
+            } else if (valueType == Boolean.class) {
+                bundle.putBoolean(key, (boolean)val);
+            } else if (valueType == String.class) {
+                bundle.putString(key, (String)val);
+            }
+        }
+        return bundle;
+    }
+
     private String getNullableStringValue(String key) {
         final Object value = mKeyValues.get(key);
         if (value != null) {
@@ -319,6 +342,31 @@ public class MmsConfig {
         public Overridden(MmsConfig base, ContentValues overrides) {
             mBase = base;
             mOverrides = overrides;
+        }
+
+        public Bundle getCarrierConfigValues() {
+            final Bundle bundle = new Bundle();
+            final Iterator<Map.Entry<String, Object>> iter = mBase.mKeyValues.entrySet().iterator();
+            while(iter.hasNext()) {
+                final Map.Entry<String, Object> entry = iter.next();
+                final String key = entry.getKey();
+                final Object val = entry.getValue();
+                Class<?> valueType =  val != null ? val.getClass() : String.class;
+                if (valueType == Integer.class) {
+                    final Integer value = mOverrides != null ? mOverrides.getAsInteger(key) :
+                        (int)val;
+                    bundle.putInt(key, value);
+                } else if (valueType == Boolean.class) {
+                    final Boolean value = mOverrides != null ? mOverrides.getAsBoolean(key) :
+                        (boolean)val;
+                    bundle.putBoolean(key, value);
+                } else if (valueType == String.class) {
+                    final String value = mOverrides != null ? mOverrides.getAsString(key) :
+                        (String)val;
+                    bundle.putString(key, value);
+                }
+            }
+            return bundle;
         }
 
         private int getInt(String key) {

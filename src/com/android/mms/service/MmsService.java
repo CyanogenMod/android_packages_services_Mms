@@ -42,6 +42,7 @@ import android.database.Cursor;
 import android.database.sqlite.SQLiteException;
 import android.net.Uri;
 import android.os.Binder;
+import android.os.Bundle;
 import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.IBinder;
@@ -169,45 +170,13 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
         }
 
         @Override
-        public boolean getCarrierConfigBoolean(long subId, String name, boolean defaultValue) {
-            Log.d(TAG, "getCarrierConfigBoolean " + name);
+        public Bundle getCarrierConfigValues(long subId) {
+            Log.d(TAG, "getCarrierConfigValues");
             final MmsConfig mmsConfig = MmsConfigManager.getInstance().getMmsConfigBySubId(subId);
             if (mmsConfig == null) {
-                return defaultValue;
+                return new Bundle();
             }
-            final Object value = mmsConfig.getValueAsType(name, MmsConfig.KEY_TYPE_BOOL);
-            if (value != null) {
-                return (Boolean)value;
-            }
-            return defaultValue;
-        }
-
-        @Override
-        public int getCarrierConfigInt(long subId, String name, int defaultValue) {
-            Log.d(TAG, "getCarrierConfigInt " + name);
-            final MmsConfig mmsConfig = MmsConfigManager.getInstance().getMmsConfigBySubId(subId);
-            if (mmsConfig == null) {
-                return defaultValue;
-            }
-            final Object value = mmsConfig.getValueAsType(name, MmsConfig.KEY_TYPE_INT);
-            if (value != null) {
-                return (Integer)value;
-            }
-            return defaultValue;
-        }
-
-        @Override
-        public String getCarrierConfigString(long subId, String name, String defaultValue) {
-            Log.d(TAG, "getCarrierConfigString " + name);
-            final MmsConfig mmsConfig = MmsConfigManager.getInstance().getMmsConfigBySubId(subId);
-            if (mmsConfig == null) {
-                return defaultValue;
-            }
-            final Object value = mmsConfig.getValueAsType(name, MmsConfig.KEY_TYPE_STRING);
-            if (value != null) {
-                return (String)value;
-            }
-            return defaultValue;
+            return mmsConfig.getCarrierConfigValues();
         }
 
         @Override
