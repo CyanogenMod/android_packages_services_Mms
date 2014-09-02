@@ -171,9 +171,11 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
         @Override
         public boolean getCarrierConfigBoolean(long subId, String name, boolean defaultValue) {
             Log.d(TAG, "getCarrierConfigBoolean " + name);
-            // TODO: use subId to get specific mms config
-            final Object value = MmsConfig.getInstance()
-                    .getValueAsType(name, MmsConfig.KEY_TYPE_BOOL);
+            final MmsConfig mmsConfig = MmsConfigManager.getInstance().getMmsConfigBySubId(subId);
+            if (mmsConfig == null) {
+                return defaultValue;
+            }
+            final Object value = mmsConfig.getValueAsType(name, MmsConfig.KEY_TYPE_BOOL);
             if (value != null) {
                 return (Boolean)value;
             }
@@ -183,9 +185,11 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
         @Override
         public int getCarrierConfigInt(long subId, String name, int defaultValue) {
             Log.d(TAG, "getCarrierConfigInt " + name);
-            // TODO: use subId to get specific mms config
-            final Object value = MmsConfig.getInstance()
-                    .getValueAsType(name, MmsConfig.KEY_TYPE_INT);
+            final MmsConfig mmsConfig = MmsConfigManager.getInstance().getMmsConfigBySubId(subId);
+            if (mmsConfig == null) {
+                return defaultValue;
+            }
+            final Object value = mmsConfig.getValueAsType(name, MmsConfig.KEY_TYPE_INT);
             if (value != null) {
                 return (Integer)value;
             }
@@ -195,9 +199,11 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
         @Override
         public String getCarrierConfigString(long subId, String name, String defaultValue) {
             Log.d(TAG, "getCarrierConfigString " + name);
-            // TODO: use subId to get specific mms config
-            final Object value = MmsConfig.getInstance()
-                    .getValueAsType(name, MmsConfig.KEY_TYPE_STRING);
+            final MmsConfig mmsConfig = MmsConfigManager.getInstance().getMmsConfigBySubId(subId);
+            if (mmsConfig == null) {
+                return defaultValue;
+            }
+            final Object value = mmsConfig.getValueAsType(name, MmsConfig.KEY_TYPE_STRING);
             if (value != null) {
                 return (String)value;
             }
@@ -409,7 +415,7 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
         Log.d(TAG, "onCreate");
         // Load mms_config
         // TODO (ywen): make sure we start request queues after mms_config is loaded
-        MmsConfig.init(this);
+        MmsConfigManager.getInstance().init(this);
     }
 
     private Uri importSms(String address, int type, String text, long timestampMillis,

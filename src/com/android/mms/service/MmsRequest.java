@@ -125,7 +125,9 @@ public abstract class MmsRequest {
         mMessageUri = messageUri;
         mSubId = subId;
         mCreator = creator;
-        mMmsConfig = new MmsConfig.Overridden(MmsConfig.getInstance(), configOverrides);
+        mMmsConfig = new MmsConfig.Overridden(
+                MmsConfigManager.getInstance().getMmsConfigBySubId(subId),
+                configOverrides);
     }
 
     /**

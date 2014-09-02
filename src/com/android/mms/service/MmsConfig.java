@@ -18,7 +18,6 @@ package com.android.mms.service;
 
 import android.content.ContentValues;
 import android.content.Context;
-import android.content.res.Configuration;
 import android.content.res.XmlResourceParser;
 import android.os.SystemProperties;
 import android.telephony.TelephonyManager;
@@ -27,7 +26,6 @@ import android.util.Base64;
 import android.util.Log;
 
 import java.io.UnsupportedEncodingException;
-import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -171,10 +169,36 @@ public class MmsConfig {
         DEFAULTS.put(CONFIG_NAI_SUFFIX, "");
     }
 
-    private static volatile MmsConfig sInstance = new MmsConfig();
+    private final long mSubId;
 
-    public static MmsConfig getInstance() {
-        return sInstance;
+    /**
+     * This class manages a cached copy of current MMS configuration key values for a particular
+     * subscription id. (See the {@link android.telephony.SubscriptionManager}).
+     *
+     * @param context Context of the particular subscription to load. The context's mcc/mnc
+     * should be set to that of the subscription id
+     * @param subId Subscription id of the mcc/mnc in the context
+     */
+    public MmsConfig(Context context, long subId) {
+        mSubId = subId;
+        // Load defaults
+        mKeyValues.clear();
+        mKeyValues.putAll(DEFAULTS);
+        // Load User-Agent and UA profile URL settings
+        loadDeviceUaSettings(context);
+        Log.v(TAG, "MmsConfig: mUserAgent=" + mUserAgent + ", mUaProfUrl=" + mUaProfUrl);
+        // Load mms_config.xml resource overlays
+        loadFromResources(context);
+        Log.v(TAG, "MmsConfig: all settings -- " + mKeyValues);
+    }
+
+    /**
+     * Return the subscription ID associated with this MmsConfig
+     *
+     * @return subId the subId associated with this MmsConfig
+     */
+    public long getSubId() {
+        return mSubId;
     }
 
     /**
@@ -235,19 +259,6 @@ public class MmsConfig {
         return null;
     }
 
-    public static void init(final Context context) {
-        new Thread() {
-            @Override
-            public void run() {
-                Configuration configuration = context.getResources().getConfiguration();
-                // Always put the mnc/mcc in the log so we can tell which mms_config.xml was loaded.
-                Log.d(TAG, "MmsConfig: mnc/mcc: " + configuration.mcc + "/" + configuration.mnc);
-                getInstance().load(context);
-            }
-        }.start();
-    }
-
-
     private String getNullableStringValue(String key) {
         final Object value = mKeyValues.get(key);
         if (value != null) {
@@ -276,18 +287,6 @@ public class MmsConfig {
                 (TelephonyManager) context.getSystemService(Context.TELEPHONY_SERVICE);
         mUserAgent = telephonyManager.getMmsUserAgent();
         mUaProfUrl = telephonyManager.getMmsUAProfUrl();
-    }
-
-    public void load(Context context) {
-        // Load defaults
-        mKeyValues.clear();
-        mKeyValues.putAll(DEFAULTS);
-        // Load User-Agent and UA profile URL settings
-        loadDeviceUaSettings(context);
-        Log.d(TAG, "MmsConfig: mUserAgent=" + mUserAgent + ", mUaProfUrl=" + mUaProfUrl);
-        // Load mms_config.xml resource overlays
-        loadFromResources(context);
-        Log.v(TAG, "MmsConfig: all settings -- " + mKeyValues);
     }
 
     private void loadFromResources(Context context) {
