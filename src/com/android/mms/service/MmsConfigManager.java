@@ -121,7 +121,7 @@ public class MmsConfigManager {
     private void load(Context context) {
         List<SubInfoRecord> subs = SubscriptionManager.getActiveSubInfoList();
         if (subs == null) {
-            Log.d(TAG, "MmsConfigManager.load -- empty getActivatedSubInfoList");
+            Log.d(TAG, "MmsConfigManager.load -- empty getActiveSubInfoList");
             return;
         }
         // Load all the mms_config.xml files in a separate map and then swap with the
