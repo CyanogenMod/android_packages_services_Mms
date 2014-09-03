@@ -119,7 +119,7 @@ public class MmsConfigManager {
      *
      */
     private void load(Context context) {
-        List<SubInfoRecord> subs = SubscriptionManager.getActivatedSubInfoList(context);
+        List<SubInfoRecord> subs = SubscriptionManager.getActiveSubInfoList();
         if (subs == null) {
             Log.d(TAG, "MmsConfigManager.load -- empty getActivatedSubInfoList");
             return;
