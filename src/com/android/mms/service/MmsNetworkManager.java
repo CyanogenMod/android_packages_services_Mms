@@ -25,6 +25,7 @@ import android.net.Network;
 import android.net.NetworkCapabilities;
 import android.net.NetworkRequest;
 import android.os.SystemClock;
+import android.provider.Settings;
 import android.util.Log;
 
 import java.net.InetAddress;
@@ -35,11 +36,11 @@ import java.net.UnknownHostException;
  */
 public class MmsNetworkManager implements NameResolver {
     // Timeout used to call ConnectivityManager.requestNetwork
-    private static final int NETWORK_REQUEST_TIMEOUT_MILLIS = 3 * 60 * 1000;
+    private static final int NETWORK_REQUEST_TIMEOUT_MILLIS = 60 * 1000;
     // Wait timeout for this class, a little bit longer than the above timeout
     // to make sure we don't bail prematurely
     private static final int NETWORK_ACQUIRE_TIMEOUT_MILLIS =
-            NETWORK_REQUEST_TIMEOUT_MILLIS + (15 * 1000);
+            NETWORK_REQUEST_TIMEOUT_MILLIS + (5 * 1000);
 
     private Context mContext;
     // The requested MMS {@link android.net.Network} we are holding
@@ -59,12 +60,15 @@ public class MmsNetworkManager implements NameResolver {
     // The callback to register when we request MMS network
     private ConnectivityManager.NetworkCallback mNetworkCallback;
 
+    private ConnectivityManager mConnectivityManager;
+
     // TODO: we need to re-architect this when we support MSIM, like maybe one manager for each SIM?
     public MmsNetworkManager(Context context) {
         mContext = context;
         mNetworkCallback = null;
         mNetwork = null;
         mMmsRequestCount = 0;
+        mConnectivityManager = null;
     }
 
     public Network getNetwork() {
@@ -77,6 +81,10 @@ public class MmsNetworkManager implements NameResolver {
      * @throws com.android.mms.service.exception.MmsNetworkException if we fail to acquire it
      */
     public void acquireNetwork() throws MmsNetworkException {
+        if (inAirplaneMode()) {
+            // Fast fail airplane mode
+            throw new MmsNetworkException("In airplane mode");
+        }
         synchronized (this) {
             mMmsRequestCount += 1;
             if (mNetwork != null) {
@@ -130,8 +138,7 @@ public class MmsNetworkManager implements NameResolver {
      * Start a new {@link android.net.NetworkRequest} for MMS
      */
     private void newRequest() {
-        final ConnectivityManager connectivityManager =
-                (ConnectivityManager) mContext.getSystemService(Context.CONNECTIVITY_SERVICE);
+        final ConnectivityManager connectivityManager = getConnectivityManager();
         mNetworkCallback = new ConnectivityManager.NetworkCallback() {
             @Override
             public void onAvailable(Network network) {
@@ -180,8 +187,7 @@ public class MmsNetworkManager implements NameResolver {
      */
     private void releaseRequest(ConnectivityManager.NetworkCallback callback) {
         if (callback != null) {
-            final ConnectivityManager connectivityManager =
-                    (ConnectivityManager) mContext.getSystemService(Context.CONNECTIVITY_SERVICE);
+            final ConnectivityManager connectivityManager = getConnectivityManager();
             connectivityManager.unregisterNetworkCallback(callback);
         }
     }
@@ -201,5 +207,18 @@ public class MmsNetworkManager implements NameResolver {
             return mNetwork.getAllByName(host);
         }
         return new InetAddress[0];
+    }
+
+    private ConnectivityManager getConnectivityManager() {
+        if (mConnectivityManager == null) {
+            mConnectivityManager = (ConnectivityManager) mContext.getSystemService(
+                    Context.CONNECTIVITY_SERVICE);
+        }
+        return mConnectivityManager;
+    }
+
+    private boolean inAirplaneMode() {
+        return Settings.System.getInt(mContext.getContentResolver(),
+                Settings.Global.AIRPLANE_MODE_ON, 0) != 0;
     }
 }
