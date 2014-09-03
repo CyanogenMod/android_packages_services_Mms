@@ -31,16 +31,22 @@ import android.net.LinkProperties;
 import android.net.Network;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.ParcelFileDescriptor;
 import android.provider.Telephony;
 import android.telephony.SmsManager;
 import android.util.Log;
 
+import java.io.IOException;
 import java.net.Inet4Address;
 import java.net.Inet6Address;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
+import java.util.concurrent.Callable;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Base class for MMS requests. This has the common logic of sending/downloading MMS.
@@ -73,6 +79,22 @@ public abstract class MmsRequest {
          * @return Whether to auto persist received MMS
          */
         public boolean getAutoPersistingPref();
+
+        /**
+         * Read pdu (up to maxSize bytes) from supplied content uri
+         * @param contentUri content uri from which to read
+         * @param maxSize maximum number of bytes to read
+         * @return read pdu (else null in case of error or too big)
+         */
+        public byte[] readPduFromContentUri(final Uri contentUri, final int maxSize);
+
+        /**
+         * Write pdu to supplied content uri
+         * @param contentUri content uri to which bytes should be written
+         * @param pdu pdu bytes to write
+         * @return true in case of success (else false)
+         */
+        public boolean writePduToContentUri(final Uri contentUri, final byte[] pdu);
     }
 
     // The URI of persisted message
@@ -119,8 +141,8 @@ public abstract class MmsRequest {
         }
     };
 
-    public MmsRequest(RequestManager requestManager, Uri messageUri, long subId, String creator,
-            ContentValues configOverrides) {
+    public MmsRequest(RequestManager requestManager, Uri messageUri, long subId,
+            String creator, ContentValues configOverrides) {
         mRequestManager = requestManager;
         mMessageUri = messageUri;
         mSubId = subId;
@@ -137,43 +159,46 @@ public abstract class MmsRequest {
      * @param networkManager The network manager to use
      */
     public void execute(Context context, MmsNetworkManager networkManager) {
-        int result = Activity.RESULT_OK;
+        int result = SmsManager.MMS_ERROR_IO_ERROR;
         byte[] response = null;
-        long retryDelay = 2;
-        // Try multiple times of MMS HTTP request
-        for (int i = 0; i < RETRY_TIMES; i++) {
-            try {
-                networkManager.acquireNetwork();
+
+        if (prepareForHttpRequest()) {
+            long retryDelay = 2;
+            // Try multiple times of MMS HTTP request
+            for (int i = 0; i < RETRY_TIMES; i++) {
                 try {
-                    final ApnSettings apn = ApnSettings.load(context, null/*apnName*/, mSubId);
-                    response = doHttp(context, networkManager, apn);
-                    result = Activity.RESULT_OK;
-                    // Success
+                    networkManager.acquireNetwork();
+                    try {
+                        final ApnSettings apn = ApnSettings.load(context, null/*apnName*/, mSubId);
+                        response = doHttp(context, networkManager, apn);
+                        result = Activity.RESULT_OK;
+                        // Success
+                        break;
+                    } finally {
+                        networkManager.releaseNetwork();
+                    }
+                } catch (ApnException e) {
+                    Log.e(MmsService.TAG, "MmsRequest: APN failure", e);
+                    result = SmsManager.MMS_ERROR_INVALID_APN;
                     break;
-                } finally {
-                    networkManager.releaseNetwork();
+                } catch (MmsNetworkException e) {
+                    Log.e(MmsService.TAG, "MmsRequest: MMS network acquiring failure", e);
+                    result = SmsManager.MMS_ERROR_UNABLE_CONNECT_MMS;
+                    // Retry
+                } catch (MmsHttpException e) {
+                    Log.e(MmsService.TAG, "MmsRequest: HTTP or network I/O failure", e);
+                    result = SmsManager.MMS_ERROR_HTTP_FAILURE;
+                    // Retry
+                } catch (Exception e) {
+                    Log.e(MmsService.TAG, "MmsRequest: unexpected failure", e);
+                    result = SmsManager.MMS_ERROR_UNSPECIFIED;
+                    break;
                 }
-            } catch (ApnException e) {
-                Log.e(MmsService.TAG, "MmsRequest: APN failure", e);
-                result = SmsManager.MMS_ERROR_INVALID_APN;
-                break;
-            } catch (MmsNetworkException e) {
-                Log.e(MmsService.TAG, "MmsRequest: MMS network acquiring failure", e);
-                result = SmsManager.MMS_ERROR_UNABLE_CONNECT_MMS;
-                // Retry
-            } catch (MmsHttpException e) {
-                Log.e(MmsService.TAG, "MmsRequest: HTTP or network I/O failure", e);
-                result = SmsManager.MMS_ERROR_HTTP_FAILURE;
-                // Retry
-            } catch (Exception e) {
-                Log.e(MmsService.TAG, "MmsRequest: unexpected failure", e);
-                result = SmsManager.MMS_ERROR_UNSPECIFIED;
-                break;
+                try {
+                    Thread.sleep(retryDelay * 1000, 0/*nano*/);
+                } catch (InterruptedException e) {}
+                retryDelay <<= 1;
             }
-            try {
-                Thread.sleep(retryDelay * 1000, 0/*nano*/);
-            } catch (InterruptedException e) {}
-            retryDelay <<= 1;
         }
         processResult(context, result, response);
     }
@@ -347,15 +372,19 @@ public abstract class MmsRequest {
         // Return MMS HTTP request result via PendingIntent
         final PendingIntent pendingIntent = getPendingIntent();
         if (pendingIntent != null) {
+            boolean succeeded = true;
             // Extra information to send back with the pending intent
             Intent fillIn = new Intent();
             if (response != null) {
-                fillIn.putExtra(SmsManager.MMS_EXTRA_DATA, response);
+                succeeded = transferResponse(fillIn, response);
             }
             if (mMessageUri != null) {
                 fillIn.putExtra("uri", mMessageUri.toString());
             }
             try {
+                if (!succeeded) {
+                    result = SmsManager.MMS_ERROR_IO_ERROR;
+                }
                 pendingIntent.send(context, result, fillIn);
             } catch (PendingIntent.CanceledException e) {
                 Log.e(MmsService.TAG, "MmsRequest: sending pending intent canceled", e);
@@ -393,4 +422,19 @@ public abstract class MmsRequest {
      * @param response The response body
      */
     protected abstract void updateStatus(Context context, int result, byte[] response);
+
+    /**
+     * Prepare to make the HTTP request - will download message for sending
+     * @return true if preparation succeeds (and request can proceed) else false
+     */
+    protected abstract boolean prepareForHttpRequest();
+
+    /**
+     * Transfer the received response to the caller
+     *
+     * @param fillIn the intent that will be returned to the caller
+     * @param response the pdu to transfer
+     * @return true if response transfer succeeds else false
+     */
+    protected abstract boolean transferResponse(Intent fillIn, byte[] response);
 }
