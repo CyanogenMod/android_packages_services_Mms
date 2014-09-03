@@ -344,31 +344,6 @@ public class MmsConfig {
             mOverrides = overrides;
         }
 
-        public Bundle getCarrierConfigValues() {
-            final Bundle bundle = new Bundle();
-            final Iterator<Map.Entry<String, Object>> iter = mBase.mKeyValues.entrySet().iterator();
-            while(iter.hasNext()) {
-                final Map.Entry<String, Object> entry = iter.next();
-                final String key = entry.getKey();
-                final Object val = entry.getValue();
-                Class<?> valueType =  val != null ? val.getClass() : String.class;
-                if (valueType == Integer.class) {
-                    final Integer value = mOverrides != null ? mOverrides.getAsInteger(key) :
-                        (int)val;
-                    bundle.putInt(key, value);
-                } else if (valueType == Boolean.class) {
-                    final Boolean value = mOverrides != null ? mOverrides.getAsBoolean(key) :
-                        (boolean)val;
-                    bundle.putBoolean(key, value);
-                } else if (valueType == String.class) {
-                    final String value = mOverrides != null ? mOverrides.getAsString(key) :
-                        (String)val;
-                    bundle.putString(key, value);
-                }
-            }
-            return bundle;
-        }
-
         private int getInt(String key) {
             final Integer value = mOverrides != null ? mOverrides.getAsInteger(key) : null;
             if (value != null) {
