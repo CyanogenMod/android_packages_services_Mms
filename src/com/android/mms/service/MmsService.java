@@ -124,7 +124,7 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
     private IMms.Stub mStub = new IMms.Stub() {
         @Override
         public void sendMessage(long subId, String callingPkg, Uri contentUri,
-                String locationUrl, ContentValues configOverrides, PendingIntent sentIntent)
+                String locationUrl, Bundle configOverrides, PendingIntent sentIntent)
                         throws RemoteException {
             Log.d(TAG, "sendMessage");
             enforceSystemUid();
@@ -140,7 +140,7 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
 
         @Override
         public void downloadMessage(long subId, String callingPkg, String locationUrl,
-                Uri contentUri, ContentValues configOverrides,
+                Uri contentUri, Bundle configOverrides,
                 PendingIntent downloadedIntent) throws RemoteException {
             Log.d(TAG, "downloadMessage: " + locationUrl);
             enforceSystemUid();
@@ -308,7 +308,7 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
 
         @Override
         public void sendStoredMessage(long subId, String callingPkg, Uri messageUri,
-                ContentValues configOverrides, PendingIntent sentIntent) throws RemoteException {
+                Bundle configOverrides, PendingIntent sentIntent) throws RemoteException {
             Log.d(TAG, "sendStoredMessage " + messageUri);
             enforceSystemUid();
             // Only send a FAILED or DRAFT message

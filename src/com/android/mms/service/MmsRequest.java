@@ -31,22 +31,16 @@ import android.net.LinkProperties;
 import android.net.Network;
 import android.net.Uri;
 import android.os.Bundle;
-import android.os.ParcelFileDescriptor;
 import android.provider.Telephony;
 import android.telephony.SmsManager;
 import android.util.Log;
 
-import java.io.IOException;
 import java.net.Inet4Address;
 import java.net.Inet6Address;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
-import java.util.concurrent.Callable;
-import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
 
 /**
  * Base class for MMS requests. This has the common logic of sending/downloading MMS.
@@ -142,7 +136,7 @@ public abstract class MmsRequest {
     };
 
     public MmsRequest(RequestManager requestManager, Uri messageUri, long subId,
-            String creator, ContentValues configOverrides) {
+            String creator, Bundle configOverrides) {
         mRequestManager = requestManager;
         mMessageUri = messageUri;
         mSubId = subId;

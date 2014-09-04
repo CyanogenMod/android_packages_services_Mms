@@ -263,7 +263,6 @@ public class MmsConfig {
     }
 
     public Bundle getCarrierConfigValues() {
-        // FLAG: doesn't handle overrides!
         final Bundle bundle = new Bundle();
         final Iterator<Map.Entry<String, Object>> iter = mKeyValues.entrySet().iterator();
         while(iter.hasNext()) {
@@ -272,9 +271,9 @@ public class MmsConfig {
             final Object val = entry.getValue();
             Class<?> valueType =  val != null ? val.getClass() : String.class;
             if (valueType == Integer.class) {
-                bundle.putInt(key, (int)val);
+                bundle.putInt(key, (Integer)val);
             } else if (valueType == Boolean.class) {
-                bundle.putBoolean(key, (boolean)val);
+                bundle.putBoolean(key, (Boolean)val);
             } else if (valueType == String.class) {
                 bundle.putString(key, (String)val);
             }
@@ -337,32 +336,26 @@ public class MmsConfig {
         // The base MmsConfig
         private final MmsConfig mBase;
         // The overridden values
-        private final ContentValues mOverrides;
+        private final Bundle mOverrides;
 
-        public Overridden(MmsConfig base, ContentValues overrides) {
+        public Overridden(MmsConfig base, Bundle overrides) {
             mBase = base;
             mOverrides = overrides;
         }
 
         private int getInt(String key) {
-            final Integer value = mOverrides != null ? mOverrides.getAsInteger(key) : null;
-            if (value != null) {
-                return value;
-            }
-            return (Integer) mBase.mKeyValues.get(key);
+            final Integer def = (Integer) mBase.mKeyValues.get(key);
+            return mOverrides != null ? mOverrides.getInt(key, def) : def;
         }
 
         private boolean getBoolean(String key) {
-            final Boolean value = mOverrides != null ? mOverrides.getAsBoolean(key) : null;
-            if (value != null) {
-                return value;
-            }
-            return (Boolean) mBase.mKeyValues.get(key);
+            final Boolean def = (Boolean) mBase.mKeyValues.get(key);
+            return mOverrides != null ? mOverrides.getBoolean(key, def) : def;
         }
 
         private String getString(String key) {
             if (mOverrides != null && mOverrides.containsKey(key)) {
-                return mOverrides.getAsString(key);
+                return mOverrides.getString(key);
             }
             return mBase.getNullableStringValue(key);
         }
@@ -389,7 +382,7 @@ public class MmsConfig {
 
         public String getUserAgent() {
             if (mOverrides != null && mOverrides.containsKey(CONFIG_USER_AGENT)) {
-                return mOverrides.getAsString(CONFIG_USER_AGENT);
+                return mOverrides.getString(CONFIG_USER_AGENT);
             }
             return !TextUtils.isEmpty(mBase.mUserAgent) ?
                     mBase.mUserAgent : mBase.getNullableStringValue(CONFIG_USER_AGENT);
@@ -401,7 +394,7 @@ public class MmsConfig {
 
         public String getUaProfUrl() {
             if (mOverrides != null && mOverrides.containsKey(CONFIG_UA_PROF_URL)) {
-                return mOverrides.getAsString(CONFIG_UA_PROF_URL);
+                return mOverrides.getString(CONFIG_UA_PROF_URL);
             }
             return !TextUtils.isEmpty(mBase.mUaProfUrl) ?
                     mBase.mUaProfUrl : mBase.getNullableStringValue(CONFIG_UA_PROF_URL);

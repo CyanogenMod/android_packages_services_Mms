@@ -35,19 +35,15 @@ import android.content.Intent;
 import android.database.sqlite.SQLiteException;
 import android.net.Uri;
 import android.os.Binder;
-import android.os.ParcelFileDescriptor;
+import android.os.Bundle;
 import android.os.UserHandle;
-import android.provider.Settings;
 import android.provider.Telephony;
 import android.telephony.SmsManager;
 import android.telephony.TelephonyManager;
 import android.text.TextUtils;
 import android.util.Log;
 
-import java.io.IOException;
-import java.util.Arrays;
 import java.util.List;
-import java.util.concurrent.Callable;
 
 /**
  * Request to send an MMS
@@ -60,7 +56,7 @@ public class SendRequest extends MmsRequest {
 
     public SendRequest(RequestManager manager, long subId, Uri contentUri, Uri messageUri,
             String locationUrl, PendingIntent sentIntent, String creator,
-            ContentValues configOverrides) {
+            Bundle configOverrides) {
         super(manager, messageUri, subId, creator, configOverrides);
         mPduUri = contentUri;
         mPduData = null;
@@ -71,7 +67,7 @@ public class SendRequest extends MmsRequest {
     // Constructor used when pdu bytes have already been loaded into process
     public SendRequest(RequestManager manager, long subId, byte[] pduData, Uri messageUri,
             String locationUrl, PendingIntent sentIntent, String creator,
-            ContentValues configOverrides) {
+            Bundle configOverrides) {
         super(manager, messageUri, subId, creator, configOverrides);
         mPduUri = null;
         mPduData = pduData;
@@ -224,7 +220,7 @@ public class SendRequest extends MmsRequest {
     protected boolean transferResponse(Intent fillIn, byte[] response) {
         // SendConf pdus are always small and can be included in the intent
         if (response != null) {
-            fillIn.putExtra(SmsManager.MMS_EXTRA_DATA, response);
+            fillIn.putExtra(SmsManager.EXTRA_MMS_DATA, response);
         }
         return true;
     }

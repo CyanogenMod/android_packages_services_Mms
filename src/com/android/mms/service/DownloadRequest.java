@@ -35,17 +35,14 @@ import android.content.Intent;
 import android.database.sqlite.SQLiteException;
 import android.net.Uri;
 import android.os.Binder;
-import android.os.ParcelFileDescriptor;
+import android.os.Bundle;
 import android.os.UserHandle;
 import android.provider.Telephony;
 import android.telephony.TelephonyManager;
 import android.text.TextUtils;
 import android.util.Log;
 
-import java.io.IOException;
 import java.util.List;
-import java.util.concurrent.Callable;
-import java.util.concurrent.ExecutorService;
 
 /**
  * Request to download an MMS
@@ -60,7 +57,7 @@ public class DownloadRequest extends MmsRequest {
 
     public DownloadRequest(RequestManager manager, long subId, String locationUrl,
             Uri contentUri, PendingIntent downloadedIntent, String creator,
-            ContentValues configOverrides) {
+            Bundle configOverrides) {
         super(manager, null/*messageUri*/, subId, creator, configOverrides);
         mLocationUrl = locationUrl;
         mDownloadedIntent = downloadedIntent;
