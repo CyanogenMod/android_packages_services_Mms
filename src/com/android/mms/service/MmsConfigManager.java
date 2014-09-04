@@ -121,37 +121,22 @@ public class MmsConfigManager {
     private void load(Context context) {
         List<SubInfoRecord> subs = SubscriptionManager.getActiveSubInfoList();
         if (subs == null) {
-            Log.d(TAG, "MmsConfigManager.load -- empty getActiveSubInfoList");
+            Log.e(TAG, "MmsConfigManager.load -- empty getActiveSubInfoList");
             return;
         }
         // Load all the mms_config.xml files in a separate map and then swap with the
         // real map at the end so we don't block anyone sync'd on the real map.
         final Map<Long, MmsConfig> newConfigMap = new ArrayMap<Long, MmsConfig>();
         for (SubInfoRecord sub : subs) {
-            // FLAG: when CL https://googleplex-android-review.git.corp.google.com/#/c/525401/
-            // is checked in, re-enable this code (and see comment below)
-            //                if (TextUtils.isEmpty(sub.mMccMnc)) {
-            //                    Log.d(TAG, "MmsConfigManager.load -- no mMccMnc for sub: " + sub +
-            //                            " skipping it");
-            //                    continue;
-            //                }
-            //                int mcc, mnc;
-            //                try {
-            //                    mcc = Integer.parseInt(sub.mMccMnc.substring(0,3));
-            //                    mnc = Integer.parseInt(sub.mMccMnc.substring(3));
-            //                } catch (NumberFormatException e) {
-            //                    Log.d(TAG, "MmsConfigManager.load -- couldn't parse mMccMnc for sub: " + sub +
-            //                            " skipping it");
-            //                    continue;
-            //                }
-            // FLAG: and then remove these three lines.
-            Configuration origConfig = context.getResources().getConfiguration();
-            int mcc = origConfig.mcc;
-            int mnc = origConfig.mnc;
+            if (sub.mMcc == 0 && sub.mMnc == 0) {
+                Log.d(TAG, "MmsConfigManager.load -- no mcc/mnc for sub: " + sub +
+                        " skipping it");
+                continue;
+            }
 
             Configuration configuration = new Configuration();
-            configuration.mcc = mcc;
-            configuration.mnc = mnc;
+            configuration.mcc = sub.mMcc;
+            configuration.mnc = sub.mMnc;
             Context subContext = context.createConfigurationContext(configuration);
 
             newConfigMap.put(sub.mSubId, new MmsConfig(subContext, sub.mSubId));
