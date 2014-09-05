@@ -72,7 +72,9 @@ public class MmsNetworkManager implements NameResolver {
     }
 
     public Network getNetwork() {
-        return mNetwork;
+        synchronized (this) {
+            return mNetwork;
+        }
     }
 
     /**
@@ -113,7 +115,7 @@ public class MmsNetworkManager implements NameResolver {
             // Timed out, so release the request and fail
             Log.d(MmsService.TAG, "MmsNetworkManager: timed out");
             releaseRequest(mNetworkCallback);
-            reset();
+            resetLocked();
             throw new MmsNetworkException("Acquiring network timed out");
         }
     }
@@ -128,7 +130,7 @@ public class MmsNetworkManager implements NameResolver {
                 Log.d(MmsService.TAG, "MmsNetworkManager: release, count=" + mMmsRequestCount);
                 if (mMmsRequestCount < 1) {
                     releaseRequest(mNetworkCallback);
-                    reset();
+                    resetLocked();
                 }
             }
         }
@@ -157,7 +159,7 @@ public class MmsNetworkManager implements NameResolver {
                 synchronized (MmsNetworkManager.this) {
                     releaseRequest(this);
                     if (mNetworkCallback == this) {
-                        reset();
+                        resetLocked();
                     }
                     MmsNetworkManager.this.notifyAll();
                 }
@@ -170,7 +172,7 @@ public class MmsNetworkManager implements NameResolver {
                 synchronized (MmsNetworkManager.this) {
                     releaseRequest(this);
                     if (mNetworkCallback == this) {
-                        reset();
+                        resetLocked();
                     }
                     MmsNetworkManager.this.notifyAll();
                 }
@@ -195,7 +197,7 @@ public class MmsNetworkManager implements NameResolver {
     /**
      * Reset the state
      */
-    private void reset() {
+    private void resetLocked() {
         mNetworkCallback = null;
         mNetwork = null;
         mMmsRequestCount = 0;
@@ -203,10 +205,12 @@ public class MmsNetworkManager implements NameResolver {
 
     @Override
     public InetAddress[] getAllByName(String host) throws UnknownHostException {
-        if (mNetwork != null) {
-            return mNetwork.getAllByName(host);
+        synchronized (this) {
+            if (mNetwork != null) {
+                return mNetwork.getAllByName(host);
+            }
+            return new InetAddress[0];
         }
-        return new InetAddress[0];
     }
 
     private ConnectivityManager getConnectivityManager() {
