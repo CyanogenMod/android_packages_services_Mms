@@ -128,18 +128,18 @@ public class MmsConfigManager {
         // real map at the end so we don't block anyone sync'd on the real map.
         final Map<Long, MmsConfig> newConfigMap = new ArrayMap<Long, MmsConfig>();
         for (SubInfoRecord sub : subs) {
-            if (sub.mMcc == 0 && sub.mMnc == 0) {
+            if (sub.mcc == 0 && sub.mnc == 0) {
                 Log.d(TAG, "MmsConfigManager.load -- no mcc/mnc for sub: " + sub +
                         " skipping it");
                 continue;
             }
 
             Configuration configuration = new Configuration();
-            configuration.mcc = sub.mMcc;
-            configuration.mnc = sub.mMnc;
+            configuration.mcc = sub.mcc;
+            configuration.mnc = sub.mnc;
             Context subContext = context.createConfigurationContext(configuration);
 
-            newConfigMap.put(sub.mSubId, new MmsConfig(subContext, sub.mSubId));
+            newConfigMap.put(sub.subId, new MmsConfig(subContext, sub.subId));
         }
         synchronized(mSubIdConfigMap) {
             mSubIdConfigMap.clear();
