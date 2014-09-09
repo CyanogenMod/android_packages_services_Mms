@@ -362,6 +362,7 @@ public abstract class MmsRequest {
      */
     public void processResult(Context context, int result, byte[] response) {
         updateStatus(context, result, response);
+        revokeUriPermission(context);
 
         // Return MMS HTTP request result via PendingIntent
         final PendingIntent pendingIntent = getPendingIntent();
@@ -431,4 +432,11 @@ public abstract class MmsRequest {
      * @return true if response transfer succeeds else false
      */
     protected abstract boolean transferResponse(Intent fillIn, byte[] response);
+
+    /**
+     * Revoke the content URI permission granted by the MMS app to the phone package.
+     *
+     * @param context The context
+     */
+    protected abstract void revokeUriPermission(Context context);
 }

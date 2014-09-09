@@ -185,7 +185,8 @@ public class DownloadRequest extends MmsRequest {
             mRequestManager.addRunning(this);
         } else {
             intent.setPackage(carrierPackages.get(0));
-            intent.putExtra("url", mLocationUrl);
+            intent.putExtra(Telephony.Mms.Intents.EXTRA_MMS_LOCATION_URL, mLocationUrl);
+            intent.putExtra(Telephony.Mms.Intents.EXTRA_MMS_CONTENT_URI, mContentUri);
             intent.addFlags(Intent.FLAG_RECEIVER_NO_ABORT);
             context.sendOrderedBroadcastAsUser(
                     intent,
@@ -198,5 +199,10 @@ public class DownloadRequest extends MmsRequest {
                     null/*initialData*/,
                     null/*initialExtras*/);
         }
+    }
+
+    @Override
+    protected void revokeUriPermission(Context context) {
+        context.revokeUriPermission(mContentUri, Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
     }
 }

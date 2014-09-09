@@ -49,7 +49,7 @@ import java.util.List;
  * Request to send an MMS
  */
 public class SendRequest extends MmsRequest {
-    private Uri mPduUri;
+    private final Uri mPduUri;
     private byte[] mPduData;
     private final String mLocationUrl;
     private final PendingIntent mSentIntent;
@@ -60,17 +60,6 @@ public class SendRequest extends MmsRequest {
         super(manager, messageUri, subId, creator, configOverrides);
         mPduUri = contentUri;
         mPduData = null;
-        mLocationUrl = locationUrl;
-        mSentIntent = sentIntent;
-    }
-
-    // Constructor used when pdu bytes have already been loaded into process
-    public SendRequest(RequestManager manager, long subId, byte[] pduData, Uri messageUri,
-            String locationUrl, PendingIntent sentIntent, String creator,
-            Bundle configOverrides) {
-        super(manager, messageUri, subId, creator, configOverrides);
-        mPduUri = null;
-        mPduData = pduData;
         mLocationUrl = locationUrl;
         mSentIntent = sentIntent;
     }
@@ -161,17 +150,15 @@ public class SendRequest extends MmsRequest {
     }
 
     /**
-     * Read the pdu from the file desciptor and cache pdu bytes in request
+     * Read the pdu from the file descriptor and cache pdu bytes in request
      * @return true if pdu read successfully
      */
     private boolean readPduFromContentUri() {
-        final Uri contentUri = mPduUri;
-        if (contentUri != null) {
-            // Only try to read the file once
-            mPduUri = null;
-            final int bytesTobeRead = mMmsConfig.getMaxMessageSize();
-            mPduData = mRequestManager.readPduFromContentUri(contentUri, bytesTobeRead);
+        if (mPduData != null) {
+            return true;
         }
+        final int bytesTobeRead = mMmsConfig.getMaxMessageSize();
+        mPduData = mRequestManager.readPduFromContentUri(mPduUri, bytesTobeRead);
         return (mPduData != null);
     }
 
@@ -248,11 +235,9 @@ public class SendRequest extends MmsRequest {
         if (carrierPackages == null || carrierPackages.size() != 1) {
             mRequestManager.addRunning(this);
         } else {
-            // TODO: Can't send PDU via intent - it's too big
-            readPduFromContentUri();
             intent.setPackage(carrierPackages.get(0));
-            intent.putExtra("pdu", mPduData);
-            intent.putExtra("url", mLocationUrl);
+            intent.putExtra(Telephony.Mms.Intents.EXTRA_MMS_CONTENT_URI, mPduUri);
+            intent.putExtra(Telephony.Mms.Intents.EXTRA_MMS_LOCATION_URL, mLocationUrl);
             intent.addFlags(Intent.FLAG_RECEIVER_NO_ABORT);
             context.sendOrderedBroadcastAsUser(
                     intent,
@@ -265,5 +250,10 @@ public class SendRequest extends MmsRequest {
                     null/*initialData*/,
                     null/*initialExtras*/);
         }
+    }
+
+    @Override
+    protected void revokeUriPermission(Context context) {
+        context.revokeUriPermission(mPduUri, Intent.FLAG_GRANT_READ_URI_PERMISSION);
     }
 }

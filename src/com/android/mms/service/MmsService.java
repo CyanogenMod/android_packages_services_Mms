@@ -151,14 +151,15 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
         }
 
         @Override
-        public void updateMmsSendStatus(int messageRef, boolean success) {
-            Log.d(TAG, "updateMmsSendStatus: ref=" + messageRef + ", success=" + success);
+        public void updateMmsSendStatus(int messageRef, byte[] pdu, int status) {
+            Log.d(TAG, "updateMmsSendStatus: ref=" + messageRef
+                    + ", pdu=" + (pdu == null ? null : pdu.length) + ", status=" + status);
             enforceSystemUid();
             final MmsRequest request = mPendingRequests.get(messageRef);
             if (request != null) {
-                if (success) {
-                    // Sent successfully by carrier app, finalize the request
-                    request.processResult(MmsService.this, Activity.RESULT_OK, null/*response*/);
+                if (status != SmsManager.MMS_ERROR_RETRY) {
+                    // Sent completed (maybe success or fail) by carrier app, finalize the request.
+                    request.processResult(MmsService.this, status, pdu);
                 } else {
                     // Failed, try sending via carrier network
                     addRunning(request);
@@ -169,17 +170,16 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
             }
         }
 
-        // TODO(juliano): Move carrier package API to use content uris
         @Override
-        public void updateMmsDownloadStatus(int messageRef, byte[] pdu) {
-            Log.d(TAG, "updateMmsDownloadStatus: ref=" + messageRef
-                    + ", pdu=" + (pdu == null ? null : pdu.length));
+        public void updateMmsDownloadStatus(int messageRef, int status) {
+            Log.d(TAG, "updateMmsDownloadStatus: ref=" + messageRef + ", status=" + status);
             enforceSystemUid();
             final MmsRequest request = mPendingRequests.get(messageRef);
             if (request != null) {
-                if (pdu != null) {
-                    // Downloaded successfully by carrier app, finalize the request
-                    request.processResult(MmsService.this, Activity.RESULT_OK, pdu);
+                if (status != SmsManager.MMS_ERROR_RETRY) {
+                    // Downloaded completed (maybe success or fail) by carrier app, finalize the
+                    // request.
+                    request.processResult(MmsService.this, status, null/*response*/);
                 } else {
                     // Failed, try downloading via the carrier network
                     addRunning(request);
@@ -309,28 +309,7 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
         @Override
         public void sendStoredMessage(long subId, String callingPkg, Uri messageUri,
                 Bundle configOverrides, PendingIntent sentIntent) throws RemoteException {
-            Log.d(TAG, "sendStoredMessage " + messageUri);
-            enforceSystemUid();
-            // Only send a FAILED or DRAFT message
-            if (!isFailedOrDraft(messageUri)) {
-                Log.e(TAG, "sendStoredMessage: not FAILED or DRAFT message");
-                returnUnspecifiedFailure(sentIntent);
-                return;
-            }
-            // Load data
-            final byte[] pduData = loadPdu(messageUri);
-            if (pduData == null || pduData.length < 1) {
-                Log.e(TAG, "sendStoredMessage: failed to load PDU data");
-                returnUnspecifiedFailure(sentIntent);
-                return;
-            }
-            final SendRequest request = new SendRequest(MmsService.this, subId, pduData,
-                    messageUri, null/*locationUrl*/, sentIntent, callingPkg, configOverrides);
-            // Store the message in outbox first before sending
-            request.storeInOutbox(MmsService.this);
-            // Try sending via carrier app
-            request.trySendingByCarrierApp(MmsService.this);
-
+            throw new UnsupportedOperationException();
         }
 
         @Override
