@@ -64,6 +64,7 @@ public class MmsConfigManager {
             String action = intent.getAction();
             Log.d(TAG, "mReceiver action: " + action);
             if (action.equals(TelephonyIntents.ACTION_SUBINFO_RECORD_UPDATED) ||
+                    action.equals(TelephonyIntents.ACTION_SUBINFO_CONTENT_CHANGE) ||
                     action.equals(IccCardConstants.INTENT_VALUE_ICC_LOADED)) {
                 loadInBackground();
             }
@@ -74,6 +75,9 @@ public class MmsConfigManager {
         IntentFilter intentFilter =
                 new IntentFilter(TelephonyIntents.ACTION_SUBINFO_RECORD_UPDATED);
         context.registerReceiver(mReceiver, intentFilter);
+        IntentFilter intentFilterChange =
+                new IntentFilter(TelephonyIntents.ACTION_SUBINFO_CONTENT_CHANGE);
+        context.registerReceiver(mReceiver, intentFilterChange);
         IntentFilter intentFilterLoaded =
                 new IntentFilter(IccCardConstants.INTENT_VALUE_ICC_LOADED);
         context.registerReceiver(mReceiver, intentFilterLoaded);
