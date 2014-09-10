@@ -39,6 +39,7 @@ import android.os.Bundle;
 import android.os.UserHandle;
 import android.provider.Telephony;
 import android.telephony.SmsManager;
+import android.telephony.SubscriptionManager;
 import android.telephony.TelephonyManager;
 import android.text.TextUtils;
 import android.util.Log;
@@ -122,7 +123,7 @@ public class SendRequest extends MmsRequest {
                 if (!TextUtils.isEmpty(mCreator)) {
                     values.put(Telephony.Mms.CREATOR, mCreator);
                 }
-                values.put(Telephony.Mms.SUB_ID, mSubId);
+                values.put(Telephony.Mms.PHONE_ID, SubscriptionManager.getPhoneId(mSubId));
                 if (SqliteWrapper.update(context, context.getContentResolver(), mMessageUri, values,
                         null/*where*/, null/*selectionArg*/) != 1) {
                     Log.e(MmsService.TAG, "SendRequest.storeInOutbox: failed to update message");
@@ -134,7 +135,7 @@ public class SendRequest extends MmsRequest {
                 // Reset the timestamp
                 values.put(Telephony.Mms.DATE, System.currentTimeMillis() / 1000L);
                 values.put(Telephony.Mms.MESSAGE_BOX, Telephony.Mms.MESSAGE_BOX_OUTBOX);
-                values.put(Telephony.Mms.SUB_ID, mSubId);
+                values.put(Telephony.Mms.PHONE_ID, SubscriptionManager.getPhoneId(mSubId));
                 if (SqliteWrapper.update(context, context.getContentResolver(), mMessageUri, values,
                         null/*where*/, null/*selectionArg*/) != 1) {
                     Log.e(MmsService.TAG, "SendRequest.storeInOutbox: failed to update message");

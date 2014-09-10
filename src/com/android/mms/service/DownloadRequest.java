@@ -38,7 +38,9 @@ import android.os.Binder;
 import android.os.Bundle;
 import android.os.UserHandle;
 import android.provider.Telephony;
+import android.telephony.SubscriptionManager;
 import android.telephony.TelephonyManager;
+
 import android.text.TextUtils;
 import android.util.Log;
 
@@ -134,7 +136,7 @@ public class DownloadRequest extends MmsRequest {
             if (!TextUtils.isEmpty(mCreator)) {
                 values.put(Telephony.Mms.CREATOR, mCreator);
             }
-            values.put(Telephony.Mms.SUB_ID, mSubId);
+            values.put(Telephony.Mms.PHONE_ID, SubscriptionManager.getPhoneId(mSubId));
             if (SqliteWrapper.update(
                     context,
                     context.getContentResolver(),
