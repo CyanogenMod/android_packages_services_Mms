@@ -62,7 +62,7 @@ public class MmsConfigManager {
     private final BroadcastReceiver mReceiver = new BroadcastReceiver() {
         public void onReceive(Context context, Intent intent) {
             String action = intent.getAction();
-            Log.d(TAG, "mReceiver action: " + action);
+            Log.i(TAG, "mReceiver action: " + action);
             if (action.equals(TelephonyIntents.ACTION_SUBINFO_RECORD_UPDATED) ||
                     action.equals(TelephonyIntents.ACTION_SUBINFO_CONTENT_CHANGE) ||
                     action.equals(IccCardConstants.INTENT_VALUE_ICC_LOADED)) {
@@ -94,7 +94,7 @@ public class MmsConfigManager {
                 Configuration configuration = mContext.getResources().getConfiguration();
                 // Always put the mnc/mcc in the log so we can tell which mms_config.xml
                 // was loaded.
-                Log.d(TAG, "MmsConfigManager.loadInBackground(): mnc/mcc: " +
+                Log.i(TAG, "MmsConfigManager.loadInBackground(): mnc/mcc: " +
                         configuration.mcc + "/" + configuration.mnc);
                 load(mContext);
             }
@@ -111,9 +111,12 @@ public class MmsConfigManager {
      *         thread after a recent ACTION_SUBINFO_RECORD_UPDATED event.
      */
     public MmsConfig getMmsConfigBySubId(long subId) {
+        MmsConfig mmsConfig;
         synchronized(mSubIdConfigMap) {
-            return mSubIdConfigMap.get(subId);
+            mmsConfig = mSubIdConfigMap.get(subId);
         }
+        Log.i(TAG, "getMmsConfigBySubId -- for sub: " + subId + " mmsConfig: " + mmsConfig);
+        return mmsConfig;
     }
 
     /**
@@ -132,15 +135,20 @@ public class MmsConfigManager {
         // real map at the end so we don't block anyone sync'd on the real map.
         final Map<Long, MmsConfig> newConfigMap = new ArrayMap<Long, MmsConfig>();
         for (SubInfoRecord sub : subs) {
-            if (sub.mcc == 0 && sub.mnc == 0) {
-                Log.d(TAG, "MmsConfigManager.load -- no mcc/mnc for sub: " + sub +
-                        " skipping it");
-                continue;
-            }
-
             Configuration configuration = new Configuration();
-            configuration.mcc = sub.mcc;
-            configuration.mnc = sub.mnc;
+            if (sub.mcc == 0 && sub.mnc == 0) {
+                Configuration config = mContext.getResources().getConfiguration();
+                configuration.mcc = config.mcc;
+                configuration.mnc = config.mnc;
+                Log.i(TAG, "MmsConfigManager.load -- no mcc/mnc for sub: " + sub +
+                        " using mcc/mnc from main context: " + configuration.mcc + "/" +
+                                configuration.mnc);
+            } else {
+                Log.i(TAG, "MmsConfigManager.load -- mcc/mnc for sub: " + sub);
+
+                configuration.mcc = sub.mcc;
+                configuration.mnc = sub.mnc;
+            }
             Context subContext = context.createConfigurationContext(configuration);
 
             newConfigMap.put(sub.subId, new MmsConfig(subContext, sub.subId));
