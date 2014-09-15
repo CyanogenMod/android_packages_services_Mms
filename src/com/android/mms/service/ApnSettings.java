@@ -67,11 +67,14 @@ public class ApnSettings {
         if (Log.isLoggable(TAG, Log.VERBOSE)) {
             Log.v(TAG, "ApnSettings: apnName " + apnName);
         }
-        String selection = Telephony.Carriers.CURRENT + " IS NOT NULL";
+        // TODO: CURRENT semantics is currently broken in telephony. Revive this when it is fixed.
+        //String selection = Telephony.Carriers.CURRENT + " IS NOT NULL";
+        String selection = null;
         String[] selectionArgs = null;
         apnName = apnName != null ? apnName.trim() : null;
         if (!TextUtils.isEmpty(apnName)) {
-            selection += " AND " + Telephony.Carriers.APN + "=?";
+            //selection += " AND " + Telephony.Carriers.APN + "=?";
+            selection = Telephony.Carriers.APN + "=?";
             selectionArgs = new String[]{ apnName };
         }
         Cursor cursor = null;
