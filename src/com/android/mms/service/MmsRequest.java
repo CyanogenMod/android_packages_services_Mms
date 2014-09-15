@@ -362,7 +362,6 @@ public abstract class MmsRequest {
      */
     public void processResult(Context context, int result, byte[] response) {
         updateStatus(context, result, response);
-        revokeUriPermission(context);
 
         // Return MMS HTTP request result via PendingIntent
         final PendingIntent pendingIntent = getPendingIntent();
@@ -385,6 +384,8 @@ public abstract class MmsRequest {
                 Log.e(MmsService.TAG, "MmsRequest: sending pending intent canceled", e);
             }
         }
+
+        revokeUriPermission(context);
     }
 
     /**
