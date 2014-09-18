@@ -94,7 +94,7 @@ public class MmsConfigManager {
                 Configuration configuration = mContext.getResources().getConfiguration();
                 // Always put the mnc/mcc in the log so we can tell which mms_config.xml
                 // was loaded.
-                Log.i(TAG, "MmsConfigManager.loadInBackground(): mnc/mcc: " +
+                Log.i(TAG, "MmsConfigManager.loadInBackground(): mcc/mnc: " +
                         configuration.mcc + "/" + configuration.mnc);
                 load(mContext);
             }
@@ -127,7 +127,7 @@ public class MmsConfigManager {
      */
     private void load(Context context) {
         List<SubInfoRecord> subs = SubscriptionManager.getActiveSubInfoList();
-        if (subs == null) {
+        if (subs == null || subs.size() < 1) {
             Log.e(TAG, "MmsConfigManager.load -- empty getActiveSubInfoList");
             return;
         }

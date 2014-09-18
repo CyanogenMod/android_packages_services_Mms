@@ -23,7 +23,6 @@ import com.android.mms.service.exception.MmsNetworkException;
 import android.app.Activity;
 import android.app.PendingIntent;
 import android.content.BroadcastReceiver;
-import android.content.ContentValues;
 import android.content.Context;
 import android.content.Intent;
 import android.net.ConnectivityManager;
@@ -101,6 +100,8 @@ public abstract class MmsRequest {
     protected String mCreator;
     // MMS config
     protected MmsConfig.Overridden mMmsConfig;
+    // MMS config overrides
+    protected Bundle mMmsConfigOverrides;
 
     // Intent result receiver for carrier app
     protected final BroadcastReceiver mCarrierAppResultReceiver = new BroadcastReceiver() {
@@ -141,9 +142,19 @@ public abstract class MmsRequest {
         mMessageUri = messageUri;
         mSubId = subId;
         mCreator = creator;
-        mMmsConfig = new MmsConfig.Overridden(
-                MmsConfigManager.getInstance().getMmsConfigBySubId(subId),
-                configOverrides);
+        mMmsConfigOverrides = configOverrides;
+        mMmsConfig = null;
+    }
+
+    private boolean ensureMmsConfigLoaded() {
+        if (mMmsConfig == null) {
+            // Not yet retrieved from mms config manager. Try getting it.
+            final MmsConfig config = MmsConfigManager.getInstance().getMmsConfigBySubId(mSubId);
+            if (config != null) {
+                mMmsConfig = new MmsConfig.Overridden(config, mMmsConfigOverrides);
+            }
+        }
+        return mMmsConfig != null;
     }
 
     /**
@@ -153,11 +164,16 @@ public abstract class MmsRequest {
      * @param networkManager The network manager to use
      */
     public void execute(Context context, MmsNetworkManager networkManager) {
-        int result = SmsManager.MMS_ERROR_IO_ERROR;
+        int result = SmsManager.MMS_ERROR_UNSPECIFIED;
         byte[] response = null;
-
-        if (prepareForHttpRequest()) {
-            long retryDelay = 2;
+        if (!ensureMmsConfigLoaded()) { // Check mms config
+            Log.e(MmsService.TAG, "MmsRequest: mms config is not loaded yet");
+            result = SmsManager.MMS_ERROR_CONFIGURATION_ERROR;
+        } else if (!prepareForHttpRequest()) { // Prepare request, like reading pdu data from user
+            Log.e(MmsService.TAG, "MmsRequest: failed to prepare for request");
+            result = SmsManager.MMS_ERROR_IO_ERROR;
+        } else { // Execute
+            long retryDelaySecs = 2;
             // Try multiple times of MMS HTTP request
             for (int i = 0; i < RETRY_TIMES; i++) {
                 try {
@@ -189,9 +205,9 @@ public abstract class MmsRequest {
                     break;
                 }
                 try {
-                    Thread.sleep(retryDelay * 1000, 0/*nano*/);
+                    Thread.sleep(retryDelaySecs * 1000, 0/*nano*/);
                 } catch (InterruptedException e) {}
-                retryDelay <<= 1;
+                retryDelaySecs <<= 1;
             }
         }
         processResult(context, result, response);
