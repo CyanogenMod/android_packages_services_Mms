@@ -30,4 +30,8 @@
 
     <!-- Maximum width for an attached image -->
     <int name="maxImageWidth">2592</int>
+
+    <!-- Maximum number of recipients allowed per message. Use a value of -1
+     to indicate no limit. -->
+    <int name="recipientLimit">10</int>
 </mms_config>

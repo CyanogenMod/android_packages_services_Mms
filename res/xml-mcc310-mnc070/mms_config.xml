@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Copyright 2013 The Android Open Source Project
+<!-- Copyright 2014 The Android Open Source Project
 
      Licensed under the Apache License, Version 2.0 (the "License");
      you may not use this file except in compliance with the License.
@@ -14,11 +14,11 @@
      limitations under the License.
 -->
 
-<!-- AT&T U.S. mcc=310, mnc=410 -->
+<!-- AT&T U.S. mcc=310, mnc=070 -->
 
-<mms_config version="3">
+<mms_config version="1">
     <!-- Maximum message size in bytes for a MMS message -->
-    <int name="maxMessageSize">1048576</int>
+    <int name="maxMessageSize">614400</int>
 
     <!-- Maximum height for an attached image -->
     <int name="maxImageHeight">1944</int>
