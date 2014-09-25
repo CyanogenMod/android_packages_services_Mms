@@ -30,4 +30,17 @@
 
     <!-- Maximum width for an attached image -->
     <int name="maxImageWidth">2592</int>
+
+    <!-- Maximum number of recipients allowed per message. Use a value of -1
+         to indicate no limit. -->
+    <int name="recipientLimit">20</int>
+
+    <!-- If enableMultipartSMS is true and smsToMmsTextThreshold > 1, then multi-part SMS messages
+         will be converted into a single mms message. For example, if the mms_config.xml file
+         specifies <int name="smsToMmsTextThreshold">7</int>, then on the 8th sms segment, the
+         message will be converted to an mms. -->
+    <int name="smsToMmsTextThreshold">6</int>
+
+    <!-- Maximum length in chars of mms subject field -->
+    <int name="maxSubjectLength">80</int>
 </mms_config>
