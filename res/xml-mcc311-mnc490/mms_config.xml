@@ -15,6 +15,9 @@
 -->
 
 <mms_config version="4">
+    <!-- Flag indicating whether MMS should be enabled -->
+    <bool name="enabledMMS">true</bool>
+
     <!-- Maximum message size in bytes for a MMS message -->
     <int name="maxMessageSize">1048576</int>
 
@@ -24,15 +27,20 @@
     <!-- Maximum width for an attached image -->
     <int name="maxImageWidth">2592</int>
 
+    <!-- Maximum number of recipients allowed per message. Use a value of -1
+         to indicate no limit. -->
+    <int name="recipientLimit">40</int>
+
     <!-- If true, The text message over 160 characters will be sent in multi part.
          If false, The text message over 160 characters will be sent
-         via multi media message or separate, independent SMS messages,
-         dependent on sendMultipartSMSAsSeparateMessages value. -->
-    <bool name="enableMultipartSMS">false</bool>
+         via multi media message. -->
+    <bool name="enableMultipartSMS">true</bool>
 
-    <!-- If this is true, The text message over 160 characters will be sent in separate,
-         independent messages after split into 160 character parts -->
-    <bool name="sendMultipartSmsAsSeparateMessages">true</bool>
+    <!-- If enableMultipartSMS is true and smsToMmsTextThreshold > 1, then multi-part SMS messages
+         will be converted into a single mms message. For example, if the mms_config.xml file
+         specifies <int name="smsToMmsTextThreshold">7</int>, then on the 8th sms segment, the
+         message will be converted to an mms. -->
+    <int name="smsToMmsTextThreshold">6</int>
 
     <!-- If true, The mms support slide duration.
          If false, The mms does not support slide duration and we have to
@@ -43,6 +51,12 @@
          to indicate default value -->
     <int name="maxMessageTextSize">-1</int>
 
+    <!-- Maximum length in chars of mms subject field -->
+    <int name="maxSubjectLength">80</int>
+
+    <!-- Email Gateway Number -->
+    <string name="emailGatewayNumber">6245</string>
+
     <bool name="enableMMSReadReports">false</bool>
 
     <bool name="enableSMSDeliveryReports">false</bool>
@@ -51,9 +65,11 @@
 
     <!-- Reference for additional http parameters used in MMS http request.
          Parameters are seperated by '|'. Optional. -->
-    <string name="httpParams">X-MDN: 1##LINE1##</string>
+    <string name="httpParams">X-MDN: ##LINE1##|Proxy-Authorization: Basic ##NAI##</string>
+
+    <!-- Suffix to the NAI header (encoded together with base64) -->
+    <string name="naiSuffix">:pcs</string>
 
     <!-- If true, need to read content_disposition field of an MMS part -->
     <bool name="supportMmsContentDisposition">false</bool>
 </mms_config>
-
