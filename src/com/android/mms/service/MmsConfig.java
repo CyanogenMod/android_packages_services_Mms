@@ -501,7 +501,7 @@ public class MmsConfig {
             if (MACRO_LINE1.equals(macro)) {
                 return getLine1(context);
             } else if (MACRO_NAI.equals(macro)) {
-                return getNai();
+                return getNai(context);
             }
             return null;
         }
@@ -519,8 +519,14 @@ public class MmsConfig {
         /**
          * @return the NAI (Network Access Identifier) from SystemProperties
          */
-        private String getNai() {
-            String nai = SystemProperties.get("persist.radio.cdma.nai");
+        private String getNai(Context context) {
+            final TelephonyManager telephonyManager = (TelephonyManager) context.getSystemService(
+                    Context.TELEPHONY_SERVICE);
+            String nai = telephonyManager.getNai();
+            if (Log.isLoggable(TAG, Log.VERBOSE)) {
+                Log.v(TAG, "MmsConfig:Nai=" + nai);
+            }
+
             if (!TextUtils.isEmpty(nai)) {
                 String naiSuffix = getNaiSuffix();
                 if (!TextUtils.isEmpty(naiSuffix)) {
