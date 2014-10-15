@@ -87,7 +87,7 @@ public class SendRequest extends MmsRequest {
     }
 
     @Override
-    protected int getRunningQueue() {
+    protected int getQueueType() {
         return MmsService.QUEUE_INDEX_SEND;
     }
 
@@ -239,7 +239,7 @@ public class SendRequest extends MmsRequest {
                 intent);
 
         if (carrierPackages == null || carrierPackages.size() != 1) {
-            mRequestManager.addRunning(this);
+            mRequestManager.addSimRequest(this);
         } else {
             intent.setPackage(carrierPackages.get(0));
             intent.putExtra(Telephony.Mms.Intents.EXTRA_MMS_CONTENT_URI, mPduUri);

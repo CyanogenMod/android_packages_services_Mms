@@ -87,7 +87,7 @@ public class DownloadRequest extends MmsRequest {
     }
 
     @Override
-    protected int getRunningQueue() {
+    protected int getQueueType() {
         return MmsService.QUEUE_INDEX_DOWNLOAD;
     }
 
@@ -188,7 +188,7 @@ public class DownloadRequest extends MmsRequest {
                 intent);
 
         if (carrierPackages == null || carrierPackages.size() != 1) {
-            mRequestManager.addRunning(this);
+            mRequestManager.addSimRequest(this);
         } else {
             intent.setPackage(carrierPackages.get(0));
             intent.putExtra(Telephony.Mms.Intents.EXTRA_MMS_LOCATION_URL, mLocationUrl);

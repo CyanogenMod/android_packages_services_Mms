@@ -44,19 +44,19 @@ public abstract class MmsRequest {
      */
     public static interface RequestManager {
         /**
-         * Add a request to pending queue when it is executed by carrier app
+         * Add a request to be executed by carrier app
          *
          * @param key The message ref key from carrier app
          * @param request The request in pending
          */
-        public void addPending(int key, MmsRequest request);
+        public void addCarrierAppRequest(int key, MmsRequest request);
 
         /**
-         * Enqueue an MMS request for running
+         * Enqueue an MMS request
          *
          * @param request the request to enqueue
          */
-        public void addRunning(MmsRequest request);
+        public void addSimRequest(MmsRequest request);
 
         /*
          * @return Whether to auto persist received MMS
@@ -109,7 +109,7 @@ public abstract class MmsRequest {
                     if (resultExtras != null && resultExtras.containsKey(EXTRA_MESSAGE_REF)) {
                         final int ref = resultExtras.getInt(EXTRA_MESSAGE_REF);
                         Log.d(MmsService.TAG, "messageref = " + ref);
-                        mRequestManager.addPending(ref, MmsRequest.this);
+                        mRequestManager.addCarrierAppRequest(ref, MmsRequest.this);
                     } else {
                         // Bad, no message ref provided
                         Log.e(MmsService.TAG, "Can't find messageref in result extras.");
@@ -117,7 +117,7 @@ public abstract class MmsRequest {
                 } else {
                     // No carrier app present, sending normally
                     Log.d(MmsService.TAG, "Sending/downloading MMS by IP failed.");
-                    mRequestManager.addRunning(MmsRequest.this);
+                    mRequestManager.addSimRequest(MmsRequest.this);
                 }
             } else {
                 Log.e(MmsService.TAG, "unexpected BroadcastReceiver action: " + action);
@@ -134,6 +134,10 @@ public abstract class MmsRequest {
         mCreator = creator;
         mMmsConfigOverrides = configOverrides;
         mMmsConfig = null;
+    }
+
+    public int getSubId() {
+        return mSubId;
     }
 
     private boolean ensureMmsConfigLoaded() {
@@ -262,9 +266,9 @@ public abstract class MmsRequest {
     protected abstract PendingIntent getPendingIntent();
 
     /**
-     * @return The running queue should be used by this request
+     * @return The queue should be used by this request, 0 is sending and 1 is downloading
      */
-    protected abstract int getRunningQueue();
+    protected abstract int getQueueType();
 
     /**
      * Update database status of the message represented by this request

@@ -16,11 +16,10 @@
 
 package com.android.mms.service;
 
-import android.content.ContentValues;
 import android.content.Context;
 import android.content.res.XmlResourceParser;
 import android.os.Bundle;
-import android.os.SystemProperties;
+import android.telephony.SubscriptionManager;
 import android.telephony.TelephonyManager;
 import android.text.TextUtils;
 import android.util.Base64;
@@ -133,6 +132,8 @@ public class MmsConfig {
      */
     // The raw phone number from TelephonyManager.getLine1Number
     public static final String MACRO_LINE1 = "LINE1";
+    // The phone number without country code
+    public static final String MACRO_LINE1NOCOUNTRYCODE = "LINE1NOCOUNTRYCODE";
     // NAI (Network Access Identifier), used by Sprint for authentication
     public static final String MACRO_NAI = "NAI";
 
@@ -499,9 +500,11 @@ public class MmsConfig {
          */
         public String getHttpParamMacro(Context context, String macro) {
             if (MACRO_LINE1.equals(macro)) {
-                return getLine1(context);
+                return getLine1(context, mBase.getSubId());
+            } else if (MACRO_LINE1NOCOUNTRYCODE.equals(macro)) {
+                return getLine1NoCountryCode(context, mBase.getSubId());
             } else if (MACRO_NAI.equals(macro)) {
-                return getNai(context);
+                return getNai(context, mBase.getSubId());
             }
             return null;
         }
@@ -509,22 +512,30 @@ public class MmsConfig {
         /**
          * @return the phone number
          */
-        private static String getLine1(Context context) {
-            // TODO: for MSIM, we will need to pass in the subId
+        private static String getLine1(Context context, int subId) {
             final TelephonyManager telephonyManager = (TelephonyManager) context.getSystemService(
                     Context.TELEPHONY_SERVICE);
-            return telephonyManager.getLine1Number();
+            return telephonyManager.getLine1NumberForSubscriber(subId);
+        }
+
+        private static String getLine1NoCountryCode(Context context, int subId) {
+            final TelephonyManager telephonyManager = (TelephonyManager) context.getSystemService(
+                    Context.TELEPHONY_SERVICE);
+            return PhoneUtils.getNationalNumber(
+                    telephonyManager,
+                    subId,
+                    telephonyManager.getLine1NumberForSubscriber(subId));
         }
 
         /**
          * @return the NAI (Network Access Identifier) from SystemProperties
          */
-        private String getNai(Context context) {
+        private String getNai(Context context, int subId) {
             final TelephonyManager telephonyManager = (TelephonyManager) context.getSystemService(
                     Context.TELEPHONY_SERVICE);
-            String nai = telephonyManager.getNai();
+            String nai = telephonyManager.getNai(SubscriptionManager.getSlotId(subId));
             if (Log.isLoggable(TAG, Log.VERBOSE)) {
-                Log.v(TAG, "MmsConfig:Nai=" + nai);
+                Log.v(TAG, "MmsConfig.getNai: nai=" + nai);
             }
 
             if (!TextUtils.isEmpty(nai)) {

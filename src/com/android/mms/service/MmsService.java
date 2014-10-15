@@ -16,21 +16,6 @@
 
 package com.android.mms.service;
 
-import com.google.android.mms.MmsException;
-import com.google.android.mms.pdu.DeliveryInd;
-import com.google.android.mms.pdu.GenericPdu;
-import com.google.android.mms.pdu.NotificationInd;
-import com.google.android.mms.pdu.PduComposer;
-import com.google.android.mms.pdu.PduParser;
-import com.google.android.mms.pdu.PduPersister;
-import com.google.android.mms.pdu.ReadOrigInd;
-import com.google.android.mms.pdu.RetrieveConf;
-import com.google.android.mms.pdu.SendReq;
-import com.google.android.mms.util.SqliteWrapper;
-
-import com.android.internal.telephony.IMms;
-import com.android.internal.telephony.SmsApplication;
-
 import android.app.PendingIntent;
 import android.app.Service;
 import android.content.ContentResolver;
@@ -47,17 +32,35 @@ import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.IBinder;
 import android.os.Looper;
+import android.os.Message;
 import android.os.ParcelFileDescriptor;
 import android.os.Process;
-import android.os.Message;
 import android.os.RemoteException;
 import android.provider.Telephony;
 import android.telephony.SmsManager;
+import android.telephony.SubscriptionManager;
 import android.text.TextUtils;
 import android.util.Log;
+import android.util.SparseArray;
+
+import com.android.internal.telephony.IMms;
+import com.android.internal.telephony.SmsApplication;
+import com.google.android.mms.MmsException;
+import com.google.android.mms.pdu.DeliveryInd;
+import com.google.android.mms.pdu.GenericPdu;
+import com.google.android.mms.pdu.NotificationInd;
+import com.google.android.mms.pdu.PduComposer;
+import com.google.android.mms.pdu.PduParser;
+import com.google.android.mms.pdu.PduPersister;
+import com.google.android.mms.pdu.ReadOrigInd;
+import com.google.android.mms.pdu.RetrieveConf;
+import com.google.android.mms.pdu.SendReq;
+import com.google.android.mms.util.SqliteWrapper;
 
 import java.io.IOException;
+import java.util.ArrayDeque;
 import java.util.Arrays;
+import java.util.Queue;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
@@ -86,14 +89,32 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
 
     // Pending requests that are currently executed by carrier app
     // TODO: persist this in case MmsService crashes
-    private final ConcurrentHashMap<Integer, MmsRequest> mPendingRequests =
-            new ConcurrentHashMap<Integer, MmsRequest>();
+    private final ConcurrentHashMap<Integer, MmsRequest> mPendingCarrierAppRequests =
+            new ConcurrentHashMap<>();
+
+    // Pending requests that are waiting for the SIM to be available
+    // If a different SIM is currently used by previous requests, the following
+    // requests will stay in this queue until that SIM finishes its current requests in
+    // RequestQueue.
+    // Requests are not reordered. So, e.g. if current SIM is SIM1, a request for SIM2 will be
+    // blocked in the queue. And a later request for SIM1 will be appended to the queue, ordered
+    // after the request for SIM2, instead of being put into the running queue.
+    // TODO: persist this in case MmsService crashes
+    private final Queue<MmsRequest> mPendingSimRequestQueue = new ArrayDeque<>();
 
     private final ExecutorService mExecutor = Executors.newCachedThreadPool();
 
+    // A cache of MmsNetworkManager for SIMs
+    private final SparseArray<MmsNetworkManager> mNetworkManagerCache = new SparseArray<>();
+
+    // The current SIM ID for the running requests. Only one SIM can send/download MMS at a time.
+    private int mCurrentSubId;
+    // The current running MmsRequest count.
+    private int mRunningRequestCount;
+
     @Override
-    public void addPending(int key, MmsRequest request) {
-        mPendingRequests.put(key, request);
+    public void addCarrierAppRequest(int key, MmsRequest request) {
+        mPendingCarrierAppRequests.put(key, request);
     }
 
     /**
@@ -108,8 +129,30 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
         public void handleMessage(Message msg) {
             final MmsRequest request = (MmsRequest) msg.obj;
             if (request != null) {
-                request.execute(MmsService.this, mMmsNetworkManager);
+                try {
+                    request.execute(MmsService.this, getNetworkManager(request.getSubId()));
+                } finally {
+                    synchronized (MmsService.this) {
+                        mRunningRequestCount--;
+                        if (mRunningRequestCount <= 0) {
+                            movePendingSimRequestsToRunningSynchronized();
+                        }
+                    }
+                }
+            } else {
+                Log.e(TAG, "RequestQueue: handling empty request");
             }
+        }
+    }
+
+    private MmsNetworkManager getNetworkManager(int subId) {
+        synchronized (mNetworkManagerCache) {
+            MmsNetworkManager manager = mNetworkManagerCache.get(subId);
+            if (manager == null) {
+                manager = new MmsNetworkManager(this, subId);
+                mNetworkManagerCache.put(subId, manager);
+            }
+            return manager;
         }
     }
 
@@ -119,6 +162,16 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
         }
     }
 
+    private int checkSubId(int subId) {
+        if (!SubscriptionManager.isValidSubId(subId)) {
+            throw new RuntimeException("Invalid subId " + subId);
+        }
+        if (subId == SubscriptionManager.DEFAULT_SUB_ID) {
+            return SubscriptionManager.getDefaultSmsSubId();
+        }
+        return subId;
+    }
+
     private IMms.Stub mStub = new IMms.Stub() {
         @Override
         public void sendMessage(int subId, String callingPkg, Uri contentUri,
@@ -126,6 +179,8 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
                         throws RemoteException {
             Log.d(TAG, "sendMessage");
             enforceSystemUid();
+            // Make sure the subId is correct
+            subId = checkSubId(subId);
             final SendRequest request = new SendRequest(MmsService.this, subId, contentUri,
                     null/*messageUri*/, locationUrl, sentIntent, callingPkg, configOverrides);
             if (SmsApplication.shouldWriteMessageForPackage(callingPkg, MmsService.this)) {
@@ -142,6 +197,8 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
                 PendingIntent downloadedIntent) throws RemoteException {
             Log.d(TAG, "downloadMessage: " + locationUrl);
             enforceSystemUid();
+            // Make sure the subId is correct
+            subId = checkSubId(subId);
             final DownloadRequest request = new DownloadRequest(MmsService.this, subId,
                     locationUrl, contentUri, downloadedIntent, callingPkg, configOverrides);
             // Try downloading via carrier app
@@ -153,14 +210,14 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
             Log.d(TAG, "updateMmsSendStatus: ref=" + messageRef
                     + ", pdu=" + (pdu == null ? null : pdu.length) + ", status=" + status);
             enforceSystemUid();
-            final MmsRequest request = mPendingRequests.get(messageRef);
+            final MmsRequest request = mPendingCarrierAppRequests.remove(messageRef);
             if (request != null) {
                 if (status != SmsManager.MMS_ERROR_RETRY) {
                     // Sent completed (maybe success or fail) by carrier app, finalize the request.
                     request.processResult(MmsService.this, status, pdu, 0/*httpStatusCode*/);
                 } else {
                     // Failed, try sending via carrier network
-                    addRunning(request);
+                    addSimRequest(request);
                 }
             } else {
                 // Really wrong here: can't find the request to update
@@ -172,7 +229,7 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
         public void updateMmsDownloadStatus(int messageRef, int status) {
             Log.d(TAG, "updateMmsDownloadStatus: ref=" + messageRef + ", status=" + status);
             enforceSystemUid();
-            final MmsRequest request = mPendingRequests.get(messageRef);
+            final MmsRequest request = mPendingCarrierAppRequests.remove(messageRef);
             if (request != null) {
                 if (status != SmsManager.MMS_ERROR_RETRY) {
                     // Downloaded completed (maybe success or fail) by carrier app, finalize the
@@ -181,7 +238,7 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
                             MmsService.this, status, null/*response*/, 0/*httpStatusCode*/);
                 } else {
                     // Failed, try downloading via the carrier network
-                    addRunning(request);
+                    addSimRequest(request);
                 }
             } else {
                 // Really wrong here: can't find the request to update
@@ -192,6 +249,8 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
         @Override
         public Bundle getCarrierConfigValues(int subId) {
             Log.d(TAG, "getCarrierConfigValues");
+            // Make sure the subId is correct
+            subId = checkSubId(subId);
             final MmsConfig mmsConfig = MmsConfigManager.getInstance().getMmsConfigBySubId(subId);
             if (mmsConfig == null) {
                 return new Bundle();
@@ -329,13 +388,10 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
         }
     };
 
-    // Request queue threads
+    // Running request queues, one thread per queue
     // 0: send queue
     // 1: download queue
-    private final RequestQueue[] mRequestQueues = new RequestQueue[2];
-
-    // Manages MMS connectivity related stuff
-    private final MmsNetworkManager mMmsNetworkManager = new MmsNetworkManager(this);
+    private final RequestQueue[] mRunningRequestQueues = new RequestQueue[2];
 
     /**
      * Lazy start the request queue threads
@@ -343,29 +399,81 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
      * @param queueIndex index of the queue to start
      */
     private void startRequestQueueIfNeeded(int queueIndex) {
-        if (queueIndex < 0 || queueIndex >= mRequestQueues.length) {
+        if (queueIndex < 0 || queueIndex >= mRunningRequestQueues.length) {
+            Log.e(TAG, "Start request queue if needed: invalid queue " + queueIndex);
             return;
         }
         synchronized (this) {
-            if (mRequestQueues[queueIndex] == null) {
+            if (mRunningRequestQueues[queueIndex] == null) {
                 final HandlerThread thread =
                         new HandlerThread("MmsService RequestQueue " + queueIndex);
                 thread.start();
-                mRequestQueues[queueIndex] = new RequestQueue(thread.getLooper());
+                mRunningRequestQueues[queueIndex] = new RequestQueue(thread.getLooper());
             }
         }
     }
 
     @Override
-    public void addRunning(MmsRequest request) {
+    public void addSimRequest(MmsRequest request) {
         if (request == null) {
+            Log.e(TAG, "Add running or pending: empty request");
             return;
         }
-        final int queue = request.getRunningQueue();
+        Log.d(TAG, "Current running=" + mRunningRequestCount + ", "
+                + "current subId=" + mCurrentSubId + ", "
+                + "pending=" + mPendingSimRequestQueue.size());
+        synchronized (this) {
+            if (mPendingSimRequestQueue.size() > 0 ||
+                    (mRunningRequestCount > 0 && request.getSubId() != mCurrentSubId)) {
+                Log.d(TAG, "Add request to pending queue."
+                        + " Request subId=" + request.getSubId() + ","
+                        + " current subId=" + mCurrentSubId);
+                mPendingSimRequestQueue.add(request);
+                if (mRunningRequestCount <= 0) {
+                    Log.e(TAG, "Nothing's running but queue's not empty");
+                    // Nothing is running but we are accumulating on pending queue.
+                    // This should not happen. But just in case...
+                    movePendingSimRequestsToRunningSynchronized();
+                }
+            } else {
+                addToRunningRequestQueueSynchronized(request);
+            }
+        }
+    }
+
+    private void addToRunningRequestQueueSynchronized(MmsRequest request) {
+        Log.d(TAG, "Add request to running queue for subId " + request.getSubId());
+        // Update current state of running requests
+        mCurrentSubId = request.getSubId();
+        mRunningRequestCount++;
+        // Send to the corresponding request queue for execution
+        final int queue = request.getQueueType();
         startRequestQueueIfNeeded(queue);
         final Message message = Message.obtain();
         message.obj = request;
-        mRequestQueues[queue].sendMessage(message);
+        mRunningRequestQueues[queue].sendMessage(message);
+    }
+
+    private void movePendingSimRequestsToRunningSynchronized() {
+        Log.d(TAG, "Schedule requests pending on SIM");
+        mCurrentSubId = SubscriptionManager.INVALID_SUB_ID;
+        while (mPendingSimRequestQueue.size() > 0) {
+            final MmsRequest request = mPendingSimRequestQueue.peek();
+            if (request != null) {
+                if (mCurrentSubId == SubscriptionManager.INVALID_SUB_ID ||
+                        mCurrentSubId == request.getSubId()) {
+                    // First or subsequent requests with same SIM ID
+                    mPendingSimRequestQueue.remove();
+                    addToRunningRequestQueueSynchronized(request);
+                } else {
+                    // Stop if we see a different SIM ID
+                    break;
+                }
+            } else {
+                Log.e(TAG, "Schedule pending: found empty request");
+                mPendingSimRequestQueue.remove();
+            }
+        }
     }
 
     @Override
@@ -382,8 +490,12 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
         super.onCreate();
         Log.d(TAG, "onCreate");
         // Load mms_config
-        // TODO (ywen): make sure we start request queues after mms_config is loaded
         MmsConfigManager.getInstance().init(this);
+        // Initialize running request state
+        synchronized (this) {
+            mCurrentSubId = SubscriptionManager.INVALID_SUB_ID;
+            mRunningRequestCount = 0;
+        }
     }
 
     private Uri importSms(String address, int type, String text, long timestampMillis,

@@ -51,7 +51,8 @@ public class MmsNetworkManager implements HostResolver {
     private static final long httpKeepAliveDurationMs =
             Long.parseLong(System.getProperty("http.keepAliveDuration", "300000"));  // 5 minutes.
 
-    private Context mContext;
+    private final Context mContext;
+
     // The requested MMS {@link android.net.Network} we are holding
     // We need this when we unbind from it. This is also used to indicate if the
     // MMS network is available.
@@ -59,13 +60,8 @@ public class MmsNetworkManager implements HostResolver {
     // The current count of MMS requests that require the MMS network
     // If mMmsRequestCount is 0, we should release the MMS network.
     private int mMmsRequestCount;
-
     // This is really just for using the capability
-    private NetworkRequest mNetworkRequest = new NetworkRequest.Builder()
-            .addTransportType(NetworkCapabilities.TRANSPORT_CELLULAR)
-            .addCapability(NetworkCapabilities.NET_CAPABILITY_MMS)
-            .build();
-
+    private final NetworkRequest mNetworkRequest;
     // The callback to register when we request MMS network
     private ConnectivityManager.NetworkCallback mNetworkCallback;
 
@@ -77,8 +73,10 @@ public class MmsNetworkManager implements HostResolver {
     // The MMS HTTP client for this network
     private MmsHttpClient mMmsHttpClient;
 
-    // TODO: we need to re-architect this when we support MSIM, like maybe one manager for each SIM?
-    public MmsNetworkManager(Context context) {
+    // The SIM ID which we use to connect
+    private final int mSubId;
+
+    public MmsNetworkManager(Context context, int subId) {
         mContext = context;
         mNetworkCallback = null;
         mNetwork = null;
@@ -86,6 +84,12 @@ public class MmsNetworkManager implements HostResolver {
         mConnectivityManager = null;
         mConnectionPool = null;
         mMmsHttpClient = null;
+        mSubId = subId;
+        mNetworkRequest = new NetworkRequest.Builder()
+                .addTransportType(NetworkCapabilities.TRANSPORT_CELLULAR)
+                .addCapability(NetworkCapabilities.NET_CAPABILITY_MMS)
+                .setNetworkSpecifier(Integer.toString(mSubId))
+                .build();
     }
 
     /**
