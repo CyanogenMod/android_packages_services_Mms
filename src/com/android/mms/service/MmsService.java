@@ -31,13 +31,11 @@ import com.google.android.mms.util.SqliteWrapper;
 import com.android.internal.telephony.IMms;
 import com.android.internal.telephony.SmsApplication;
 
-import android.app.Activity;
 import android.app.PendingIntent;
 import android.app.Service;
 import android.content.ContentResolver;
 import android.content.ContentUris;
 import android.content.ContentValues;
-import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.database.Cursor;
@@ -159,7 +157,7 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
             if (request != null) {
                 if (status != SmsManager.MMS_ERROR_RETRY) {
                     // Sent completed (maybe success or fail) by carrier app, finalize the request.
-                    request.processResult(MmsService.this, status, pdu);
+                    request.processResult(MmsService.this, status, pdu, 0/*httpStatusCode*/);
                 } else {
                     // Failed, try sending via carrier network
                     addRunning(request);
@@ -179,7 +177,8 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
                 if (status != SmsManager.MMS_ERROR_RETRY) {
                     // Downloaded completed (maybe success or fail) by carrier app, finalize the
                     // request.
-                    request.processResult(MmsService.this, status, null/*response*/);
+                    request.processResult(
+                            MmsService.this, status, null/*response*/, 0/*httpStatusCode*/);
                 } else {
                     // Failed, try downloading via the carrier network
                     addRunning(request);

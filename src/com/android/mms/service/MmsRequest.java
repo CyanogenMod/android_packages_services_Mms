@@ -165,6 +165,7 @@ public abstract class MmsRequest {
      */
     public void execute(Context context, MmsNetworkManager networkManager) {
         int result = SmsManager.MMS_ERROR_UNSPECIFIED;
+        int httpStatusCode = 0;
         byte[] response = null;
         if (!ensureMmsConfigLoaded()) { // Check mms config
             Log.e(MmsService.TAG, "MmsRequest: mms config is not loaded yet");
@@ -198,6 +199,7 @@ public abstract class MmsRequest {
                 } catch (MmsHttpException e) {
                     Log.e(MmsService.TAG, "MmsRequest: HTTP or network I/O failure", e);
                     result = SmsManager.MMS_ERROR_HTTP_FAILURE;
+                    httpStatusCode = e.getStatusCode();
                     // Retry
                 } catch (Exception e) {
                     Log.e(MmsService.TAG, "MmsRequest: unexpected failure", e);
@@ -210,7 +212,7 @@ public abstract class MmsRequest {
                 retryDelaySecs <<= 1;
             }
         }
-        processResult(context, result, response);
+        processResult(context, result, response, httpStatusCode);
     }
 
     /**
@@ -242,8 +244,8 @@ public abstract class MmsRequest {
                 // remove all the unnecessary code.
                 if (!connMgr.requestRouteToHostAddress(
                         ConnectivityManager.TYPE_MOBILE_MMS, address)) {
-                    throw new MmsHttpException("MmsRequest: can not request a route for host "
-                            + address);
+                    throw new MmsHttpException(0/*statusCode*/,
+                            "MmsRequest: can not request a route for host " + address);
                 }
                 return HttpUtils.httpConnection(
                         context,
@@ -265,7 +267,7 @@ public abstract class MmsRequest {
             throw lastException;
         } else {
             // Should not reach here
-            throw new MmsHttpException("MmsRequest: unknown failure");
+            throw new MmsHttpException(0/*statusCode*/, "MmsRequest: unknown failure");
         }
     }
 
@@ -359,24 +361,25 @@ public abstract class MmsRequest {
                 }
             }
             if (resolved.size() < 1) {
-                throw new MmsHttpException("Failed to resolve " + host
-                        + " for allowed address types: " + addressTypes);
+                throw new MmsHttpException(0/*statusCode*/,
+                        "Failed to resolve " + host
+                                + " for allowed address types: " + addressTypes);
             }
             return resolved;
         } catch (final UnknownHostException e) {
-            throw new MmsHttpException("Failed to resolve " + host, e);
+            throw new MmsHttpException(0/*statusCode*/, "Failed to resolve " + host, e);
         }
     }
 
     /**
      * Process the result of the completed request, including updating the message status
      * in database and sending back the result via pending intents.
-     *
-     * @param context The context
+     *  @param context The context
      * @param result The result code of execution
      * @param response The response body
+     * @param httpStatusCode The optional http status code in case of http failure
      */
-    public void processResult(Context context, int result, byte[] response) {
+    public void processResult(Context context, int result, byte[] response, int httpStatusCode) {
         updateStatus(context, result, response);
 
         // Return MMS HTTP request result via PendingIntent
@@ -390,6 +393,9 @@ public abstract class MmsRequest {
             }
             if (mMessageUri != null) {
                 fillIn.putExtra("uri", mMessageUri.toString());
+            }
+            if (result == SmsManager.MMS_ERROR_HTTP_FAILURE && httpStatusCode != 0) {
+                fillIn.putExtra(SmsManager.EXTRA_MMS_HTTP_STATUS, httpStatusCode);
             }
             try {
                 if (!succeeded) {

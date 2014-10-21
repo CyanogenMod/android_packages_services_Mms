@@ -16,6 +16,10 @@
 
 package com.android.mms.service;
 
+import android.content.Context;
+import android.text.TextUtils;
+import android.util.Log;
+
 import com.android.mms.service.exception.MmsHttpException;
 import com.android.mms.service.http.NameResolver;
 import com.android.mms.service.http.NetworkAwareHttpClient;
@@ -33,11 +37,6 @@ import org.apache.http.entity.ByteArrayEntity;
 import org.apache.http.params.HttpConnectionParams;
 import org.apache.http.params.HttpParams;
 import org.apache.http.params.HttpProtocolParams;
-
-import android.content.Context;
-import android.net.http.AndroidHttpClient;
-import android.text.TextUtils;
-import android.util.Log;
 
 import java.io.DataInputStream;
 import java.io.IOException;
@@ -243,7 +242,8 @@ public class HttpUtils {
                     }
                 }
             }
-            if (status.getStatusCode() != 200) { // HTTP 200 is success.
+            final int statusCode = status.getStatusCode();
+            if (statusCode != 200) { // HTTP 200 is success.
                 StringBuilder sb = new StringBuilder();
                 if (body != null) {
                     sb.append("response: text=").append(new String(body)).append('\n');
@@ -267,7 +267,7 @@ public class HttpUtils {
                     }
                 }
                 Log.e(TAG, "HttpUtils: error response -- \n"
-                        + "mStatusCode=" + status.getStatusCode() + "\n"
+                        + "mStatusCode=" + statusCode + "\n"
                         + "reason=" + status.getReasonPhrase() + "\n"
                         + "url=" + url + "\n"
                         + "method=" + methodString + "\n"
@@ -275,15 +275,15 @@ public class HttpUtils {
                         + "proxyHost=" + proxyHost + "\n"
                         + "proxyPort=" + proxyPort
                         + (sb != null ? "\n" + sb.toString() : ""));
-                throw new MmsHttpException(status.getReasonPhrase());
+                throw new MmsHttpException(statusCode, status.getReasonPhrase());
             }
             return body;
         } catch (IOException e) {
             Log.e(TAG, "HttpUtils: IO failure", e);
-            throw new MmsHttpException(e);
+            throw new MmsHttpException(0/*statusCode*/, e);
         } catch (URISyntaxException e) {
             Log.e(TAG, "HttpUtils: invalid url " + url);
-            throw new MmsHttpException("Invalid url " + url);
+            throw new MmsHttpException(0/*statusCode*/, "Invalid url " + url);
         } finally {
             if (client != null) {
                 client.close();
