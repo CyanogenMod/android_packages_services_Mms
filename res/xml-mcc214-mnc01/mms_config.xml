@@ -16,9 +16,13 @@
 
 <!-- Version History
         version 1 - initial version.
+        version 2 - enable force 7 bit encoding
 -->
 
-<mms_config version="1">
+<mms_config version="2">
     <!-- Disable SMS to MMS conversion for multiple recipient SMS -->
     <bool name="enableGroupMms">false</bool>
+
+    <!-- Enable force 7 bit encoding for Vodafone Spain -->
+    <bool name="config_sms_force_7bit_encoding">true</bool>
 </mms_config>
