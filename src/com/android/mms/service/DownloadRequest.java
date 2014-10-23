@@ -55,7 +55,7 @@ public class DownloadRequest extends MmsRequest {
     private final PendingIntent mDownloadedIntent;
     private final Uri mContentUri;
 
-    public DownloadRequest(RequestManager manager, long subId, String locationUrl,
+    public DownloadRequest(RequestManager manager, int subId, String locationUrl,
             Uri contentUri, PendingIntent downloadedIntent, String creator,
             Bundle configOverrides) {
         super(manager, null/*messageUri*/, subId, creator, configOverrides);

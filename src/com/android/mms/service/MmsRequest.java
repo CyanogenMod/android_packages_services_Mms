@@ -95,7 +95,7 @@ public abstract class MmsRequest {
     // The reference to the pending requests manager (i.e. the MmsService)
     protected RequestManager mRequestManager;
     // The SIM id
-    protected long mSubId;
+    protected int mSubId;
     // The creator app
     protected String mCreator;
     // MMS config
@@ -136,7 +136,7 @@ public abstract class MmsRequest {
         }
     };
 
-    public MmsRequest(RequestManager requestManager, Uri messageUri, long subId,
+    public MmsRequest(RequestManager requestManager, Uri messageUri, int subId,
             String creator, Bundle configOverrides) {
         mRequestManager = requestManager;
         mMessageUri = messageUri;

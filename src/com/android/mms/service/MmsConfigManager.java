@@ -49,7 +49,7 @@ public class MmsConfigManager {
     }
 
     // Map the various subIds to their corresponding MmsConfigs.
-    private final Map<Long, MmsConfig> mSubIdConfigMap = new ArrayMap<Long, MmsConfig>();
+    private final Map<Integer, MmsConfig> mSubIdConfigMap = new ArrayMap<Integer, MmsConfig>();
     private Context mContext;
 
     /**
@@ -110,7 +110,7 @@ public class MmsConfigManager {
      *         TelephonyManager has setup the SIMs or if loadInBackground is still spawning a
      *         thread after a recent ACTION_SUBINFO_RECORD_UPDATED event.
      */
-    public MmsConfig getMmsConfigBySubId(long subId) {
+    public MmsConfig getMmsConfigBySubId(int subId) {
         MmsConfig mmsConfig;
         synchronized(mSubIdConfigMap) {
             mmsConfig = mSubIdConfigMap.get(subId);
@@ -133,7 +133,7 @@ public class MmsConfigManager {
         }
         // Load all the mms_config.xml files in a separate map and then swap with the
         // real map at the end so we don't block anyone sync'd on the real map.
-        final Map<Long, MmsConfig> newConfigMap = new ArrayMap<Long, MmsConfig>();
+        final Map<Integer, MmsConfig> newConfigMap = new ArrayMap<Integer, MmsConfig>();
         for (SubInfoRecord sub : subs) {
             Configuration configuration = new Configuration();
             if (sub.mcc == 0 && sub.mnc == 0) {

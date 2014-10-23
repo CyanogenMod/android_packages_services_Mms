@@ -54,7 +54,7 @@ public class SendRequest extends MmsRequest {
     private final String mLocationUrl;
     private final PendingIntent mSentIntent;
 
-    public SendRequest(RequestManager manager, long subId, Uri contentUri, Uri messageUri,
+    public SendRequest(RequestManager manager, int subId, Uri contentUri, Uri messageUri,
             String locationUrl, PendingIntent sentIntent, String creator,
             Bundle configOverrides) {
         super(manager, messageUri, subId, creator, configOverrides);

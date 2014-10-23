@@ -121,7 +121,7 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
 
     private IMms.Stub mStub = new IMms.Stub() {
         @Override
-        public void sendMessage(long subId, String callingPkg, Uri contentUri,
+        public void sendMessage(int subId, String callingPkg, Uri contentUri,
                 String locationUrl, Bundle configOverrides, PendingIntent sentIntent)
                         throws RemoteException {
             Log.d(TAG, "sendMessage");
@@ -137,7 +137,7 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
         }
 
         @Override
-        public void downloadMessage(long subId, String callingPkg, String locationUrl,
+        public void downloadMessage(int subId, String callingPkg, String locationUrl,
                 Uri contentUri, Bundle configOverrides,
                 PendingIntent downloadedIntent) throws RemoteException {
             Log.d(TAG, "downloadMessage: " + locationUrl);
@@ -190,7 +190,7 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
         }
 
         @Override
-        public Bundle getCarrierConfigValues(long subId) {
+        public Bundle getCarrierConfigValues(int subId) {
             Log.d(TAG, "getCarrierConfigValues");
             final MmsConfig mmsConfig = MmsConfigManager.getInstance().getMmsConfigBySubId(subId);
             if (mmsConfig == null) {
@@ -306,7 +306,7 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
         }
 
         @Override
-        public void sendStoredMessage(long subId, String callingPkg, Uri messageUri,
+        public void sendStoredMessage(int subId, String callingPkg, Uri messageUri,
                 Bundle configOverrides, PendingIntent sentIntent) throws RemoteException {
             throw new UnsupportedOperationException();
         }

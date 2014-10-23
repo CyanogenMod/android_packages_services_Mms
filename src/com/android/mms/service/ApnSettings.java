@@ -62,7 +62,7 @@ public class ApnSettings {
      * @param context
      * @param apnName the optional APN name to match
      */
-    public static ApnSettings load(Context context, String apnName, long subId)
+    public static ApnSettings load(Context context, String apnName, int subId)
             throws ApnException {
         if (Log.isLoggable(TAG, Log.VERBOSE)) {
             Log.v(TAG, "ApnSettings: apnName " + apnName);

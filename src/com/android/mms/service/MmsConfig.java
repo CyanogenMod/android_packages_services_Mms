@@ -172,7 +172,7 @@ public class MmsConfig {
         DEFAULTS.put(CONFIG_NAI_SUFFIX, "");
     }
 
-    private final long mSubId;
+    private final int mSubId;
 
     /**
      * This class manages a cached copy of current MMS configuration key values for a particular
@@ -182,7 +182,7 @@ public class MmsConfig {
      * should be set to that of the subscription id
      * @param subId Subscription id of the mcc/mnc in the context
      */
-    public MmsConfig(Context context, long subId) {
+    public MmsConfig(Context context, int subId) {
         mSubId = subId;
         // Load defaults
         mKeyValues.clear();
@@ -200,7 +200,7 @@ public class MmsConfig {
      *
      * @return subId the subId associated with this MmsConfig
      */
-    public long getSubId() {
+    public int getSubId() {
         return mSubId;
     }
 
