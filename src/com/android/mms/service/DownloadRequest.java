@@ -16,16 +16,6 @@
 
 package com.android.mms.service;
 
-import com.google.android.mms.MmsException;
-import com.google.android.mms.pdu.GenericPdu;
-import com.google.android.mms.pdu.PduHeaders;
-import com.google.android.mms.pdu.PduParser;
-import com.google.android.mms.pdu.PduPersister;
-import com.google.android.mms.pdu.RetrieveConf;
-import com.google.android.mms.util.SqliteWrapper;
-
-import com.android.mms.service.exception.MmsHttpException;
-
 import android.app.Activity;
 import android.app.AppOpsManager;
 import android.app.PendingIntent;
@@ -41,6 +31,15 @@ import android.provider.Telephony;
 import android.telephony.TelephonyManager;
 import android.text.TextUtils;
 import android.util.Log;
+
+import com.android.mms.service.exception.MmsHttpException;
+import com.google.android.mms.MmsException;
+import com.google.android.mms.pdu.GenericPdu;
+import com.google.android.mms.pdu.PduHeaders;
+import com.google.android.mms.pdu.PduParser;
+import com.google.android.mms.pdu.PduPersister;
+import com.google.android.mms.pdu.RetrieveConf;
+import com.google.android.mms.util.SqliteWrapper;
 
 import java.util.List;
 
@@ -67,12 +66,19 @@ public class DownloadRequest extends MmsRequest {
     @Override
     protected byte[] doHttp(Context context, MmsNetworkManager netMgr, ApnSettings apn)
             throws MmsHttpException {
-        return doHttpForResolvedAddresses(context,
-                netMgr,
+        final MmsHttpClient mmsHttpClient = netMgr.getOrCreateHttpClient();
+        if (mmsHttpClient == null) {
+            Log.e(MmsService.TAG, "MMS network is not ready!");
+            throw new MmsHttpException(0/*statusCode*/, "MMS network is not ready");
+        }
+        return mmsHttpClient.execute(
                 mLocationUrl,
-                null/*pdu*/,
-                HttpUtils.HTTP_GET_METHOD,
-                apn);
+                null/*pud*/,
+                MmsHttpClient.METHOD_GET,
+                apn.isProxySet(),
+                apn.getProxyAddress(),
+                apn.getProxyPort(),
+                mMmsConfig);
     }
 
     @Override
