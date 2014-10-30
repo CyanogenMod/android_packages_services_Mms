@@ -136,7 +136,7 @@ public class MmsConfigManager {
         final Map<Integer, MmsConfig> newConfigMap = new ArrayMap<Integer, MmsConfig>();
         for (SubInfoRecord sub : subs) {
             Configuration configuration = new Configuration();
-            if (sub.mcc == 0 && sub.mnc == 0) {
+            if (sub.getMcc() == 0 && sub.getMnc() == 0) {
                 Configuration config = mContext.getResources().getConfiguration();
                 configuration.mcc = config.mcc;
                 configuration.mnc = config.mnc;
@@ -146,12 +146,13 @@ public class MmsConfigManager {
             } else {
                 Log.i(TAG, "MmsConfigManager.load -- mcc/mnc for sub: " + sub);
 
-                configuration.mcc = sub.mcc;
-                configuration.mnc = sub.mnc;
+                configuration.mcc = sub.getMcc();
+                configuration.mnc = sub.getMnc();
             }
             Context subContext = context.createConfigurationContext(configuration);
 
-            newConfigMap.put(sub.subId, new MmsConfig(subContext, sub.subId));
+            int subId = sub.getSubscriptionId();
+            newConfigMap.put(subId, new MmsConfig(subContext, subId));
         }
         synchronized(mSubIdConfigMap) {
             mSubIdConfigMap.clear();
