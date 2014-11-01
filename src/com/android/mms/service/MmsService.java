@@ -16,11 +16,13 @@
 
 package com.android.mms.service;
 
+import android.annotation.Nullable;
 import android.app.PendingIntent;
 import android.app.Service;
 import android.content.ContentResolver;
 import android.content.ContentUris;
 import android.content.ContentValues;
+import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.database.sqlite.SQLiteException;
@@ -36,8 +38,10 @@ import android.os.ParcelFileDescriptor;
 import android.os.Process;
 import android.os.RemoteException;
 import android.provider.Telephony;
+import android.service.carrier.CarrierMessagingService;
 import android.telephony.SmsManager;
 import android.telephony.SubscriptionManager;
+import android.telephony.TelephonyManager;
 import android.text.TextUtils;
 import android.util.Log;
 import android.util.SparseArray;
@@ -57,6 +61,7 @@ import com.google.android.mms.util.SqliteWrapper;
 import java.io.IOException;
 import java.util.ArrayDeque;
 import java.util.Arrays;
+import java.util.List;
 import java.util.Queue;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ConcurrentHashMap;
@@ -84,11 +89,6 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
     // specific size limit should not be used (as it could be lower on some carriers).
     private static final int MAX_MMS_FILE_SIZE = 8 * 1024 * 1024;
 
-    // Pending requests that are currently executed by carrier app
-    // TODO: persist this in case MmsService crashes
-    private final ConcurrentHashMap<Integer, MmsRequest> mPendingCarrierAppRequests =
-            new ConcurrentHashMap<>();
-
     // Pending requests that are waiting for the SIM to be available
     // If a different SIM is currently used by previous requests, the following
     // requests will stay in this queue until that SIM finishes its current requests in
@@ -108,11 +108,6 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
     private int mCurrentSubId;
     // The current running MmsRequest count.
     private int mRunningRequestCount;
-
-    @Override
-    public void addCarrierAppRequest(int key, MmsRequest request) {
-        mPendingCarrierAppRequests.put(key, request);
-    }
 
     /**
      * A thread-based request queue for executing the MMS requests in serial order
@@ -169,6 +164,20 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
         return subId;
     }
 
+    @Nullable
+    private String getCarrierMessagingServicePackageIfExists() {
+        Intent intent = new Intent(CarrierMessagingService.SERVICE_INTERFACE);
+        TelephonyManager telephonyManager =
+                (TelephonyManager) this.getSystemService(Context.TELEPHONY_SERVICE);
+        List<String> carrierPackages = telephonyManager.getCarrierPackageNamesForIntent(intent);
+
+        if (carrierPackages == null || carrierPackages.size() != 1) {
+            return null;
+        } else {
+            return carrierPackages.get(0);
+        }
+    }
+
     private IMms.Stub mStub = new IMms.Stub() {
         @Override
         public void sendMessage(int subId, String callingPkg, Uri contentUri,
@@ -180,8 +189,15 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
             subId = checkSubId(subId);
             final SendRequest request = new SendRequest(MmsService.this, subId, contentUri,
                     locationUrl, sentIntent, callingPkg, configOverrides);
-            // Try sending via carrier app
-            request.trySendingByCarrierApp(MmsService.this);
+
+            final String carrierMessagingServicePackage =
+                    getCarrierMessagingServicePackageIfExists();
+            if (carrierMessagingServicePackage != null) {
+                Log.d(TAG, "sending message by carrier app");
+                request.trySendingByCarrierApp(MmsService.this, carrierMessagingServicePackage);
+            } else {
+                addSimRequest(request);
+            }
         }
 
         @Override
@@ -194,52 +210,16 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
             subId = checkSubId(subId);
             final DownloadRequest request = new DownloadRequest(MmsService.this, subId,
                     locationUrl, contentUri, downloadedIntent, callingPkg, configOverrides);
-            // Try downloading via carrier app
-            request.tryDownloadingByCarrierApp(MmsService.this);
-        }
-
-        @Override
-        public void updateMmsSendStatus(int messageRef, byte[] pdu, int status) {
-            Log.d(TAG, "updateMmsSendStatus: ref=" + messageRef
-                    + ", pdu=" + (pdu == null ? null : pdu.length) + ", status=" + status);
-            enforceSystemUid();
-            final MmsRequest request = mPendingCarrierAppRequests.remove(messageRef);
-            if (request != null) {
-                if (status != SmsManager.MMS_ERROR_RETRY) {
-                    // Sent completed (maybe success or fail) by carrier app, finalize the request.
-                    request.processResult(MmsService.this, status, pdu, 0/*httpStatusCode*/);
-                } else {
-                    // Failed, try sending via carrier network
-                    addSimRequest(request);
-                }
+            final String carrierMessagingServicePackage =
+                    getCarrierMessagingServicePackageIfExists();
+            if (carrierMessagingServicePackage != null) {
+                Log.d(TAG, "downloading message by carrier app");
+                request.tryDownloadingByCarrierApp(MmsService.this, carrierMessagingServicePackage);
             } else {
-                // Really wrong here: can't find the request to update
-                Log.e(TAG, "Failed to find the request to update send status");
+                addSimRequest(request);
             }
         }
 
-        @Override
-        public void updateMmsDownloadStatus(int messageRef, int status) {
-            Log.d(TAG, "updateMmsDownloadStatus: ref=" + messageRef + ", status=" + status);
-            enforceSystemUid();
-            final MmsRequest request = mPendingCarrierAppRequests.remove(messageRef);
-            if (request != null) {
-                if (status != SmsManager.MMS_ERROR_RETRY) {
-                    // Downloaded completed (maybe success or fail) by carrier app, finalize the
-                    // request.
-                    request.processResult(
-                            MmsService.this, status, null/*response*/, 0/*httpStatusCode*/);
-                } else {
-                    // Failed, try downloading via the carrier network
-                    addSimRequest(request);
-                }
-            } else {
-                // Really wrong here: can't find the request to update
-                Log.e(TAG, "Failed to find the request to update download status");
-            }
-        }
-
-        @Override
         public Bundle getCarrierConfigValues(int subId) {
             Log.d(TAG, "getCarrierConfigValues");
             // Make sure the subId is correct

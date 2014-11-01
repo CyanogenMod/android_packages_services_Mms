@@ -25,8 +25,12 @@ import android.content.Intent;
 import android.net.Uri;
 import android.os.Binder;
 import android.os.Bundle;
+import android.os.RemoteException;
 import android.os.UserHandle;
 import android.provider.Telephony;
+import android.service.carrier.CarrierMessagingService;
+import android.service.carrier.ICarrierMessagingService;
+import android.telephony.CarrierMessagingServiceManager;
 import android.telephony.SmsManager;
 import android.telephony.TelephonyManager;
 import android.text.TextUtils;
@@ -34,6 +38,7 @@ import android.util.Log;
 
 import com.android.internal.telephony.SmsApplication;
 import com.android.mms.service.exception.MmsHttpException;
+
 import com.google.android.mms.MmsException;
 import com.google.android.mms.pdu.GenericPdu;
 import com.google.android.mms.pdu.PduHeaders;
@@ -205,44 +210,96 @@ public class SendRequest extends MmsRequest {
      * Read the data from the file descriptor if not yet done
      * @return whether data successfully read
      */
+    @Override
     protected boolean prepareForHttpRequest() {
         return readPduFromContentUri();
     }
 
     /**
-     * Try sending via the carrier app by sending an intent
+     * Try sending via the carrier app
      *
-     * @param context The context
+     * @param context the context
+     * @param carrierMessagingServicePackage the carrier messaging service sending the MMS
      */
-    public void trySendingByCarrierApp(Context context) {
-        TelephonyManager telephonyManager =
-                (TelephonyManager) context.getSystemService(Context.TELEPHONY_SERVICE);
-        Intent intent = new Intent(Telephony.Mms.Intents.MMS_SEND_ACTION);
-        List<String> carrierPackages = telephonyManager.getCarrierPackageNamesForIntent(
-                intent);
-
-        if (carrierPackages == null || carrierPackages.size() != 1) {
-            mRequestManager.addSimRequest(this);
-        } else {
-            intent.setPackage(carrierPackages.get(0));
-            intent.putExtra(Telephony.Mms.Intents.EXTRA_MMS_CONTENT_URI, mPduUri);
-            intent.putExtra(Telephony.Mms.Intents.EXTRA_MMS_LOCATION_URL, mLocationUrl);
-            intent.addFlags(Intent.FLAG_RECEIVER_NO_ABORT);
-            context.sendOrderedBroadcastAsUser(
-                    intent,
-                    UserHandle.OWNER,
-                    android.Manifest.permission.RECEIVE_MMS,
-                    AppOpsManager.OP_RECEIVE_MMS,
-                    mCarrierAppResultReceiver,
-                    null/*scheduler*/,
-                    Activity.RESULT_CANCELED,
-                    null/*initialData*/,
-                    null/*initialExtras*/);
-        }
+    public void trySendingByCarrierApp(Context context, String carrierMessagingServicePackage) {
+        final CarrierSendManager carrierSendManger = new CarrierSendManager();
+        final CarrierSendCompleteCallback sendCallback = new CarrierSendCompleteCallback(
+                context, carrierSendManger);
+        carrierSendManger.sendMms(context, carrierMessagingServicePackage, sendCallback);
     }
 
     @Override
     protected void revokeUriPermission(Context context) {
         context.revokeUriPermission(mPduUri, Intent.FLAG_GRANT_READ_URI_PERMISSION);
+    }
+
+    /**
+     * Sends the MMS through through the carrier app.
+     */
+    private final class CarrierSendManager extends CarrierMessagingServiceManager {
+        // Initialized in sendMms
+        private volatile CarrierSendCompleteCallback mCarrierSendCompleteCallback;
+
+        void sendMms(Context context, String carrierMessagingServicePackage,
+                CarrierSendCompleteCallback carrierSendCompleteCallback) {
+            mCarrierSendCompleteCallback = carrierSendCompleteCallback;
+            if (bindToCarrierMessagingService(context, carrierMessagingServicePackage)) {
+                Log.v(MmsService.TAG, "bindService() for carrier messaging service succeeded");
+            } else {
+                Log.e(MmsService.TAG, "bindService() for carrier messaging service failed");
+                carrierSendCompleteCallback.onSendMmsComplete(
+                        CarrierMessagingService.SEND_STATUS_RETRY_ON_CARRIER_NETWORK,
+                        null /* no sendConfPdu */);
+            }
+        }
+
+        @Override
+        protected void onServiceReady(ICarrierMessagingService carrierMessagingService) {
+            try {
+                Uri locationUri = null;
+                if (mLocationUrl != null) {
+                    locationUri = Uri.parse(mLocationUrl);
+                }
+                carrierMessagingService.sendMms(mPduUri, mSubId, locationUri,
+                        mCarrierSendCompleteCallback);
+            } catch (RemoteException e) {
+                Log.e(MmsService.TAG,
+                        "Exception sending MMS using the carrier messaging service: " + e);
+                mCarrierSendCompleteCallback.onSendMmsComplete(
+                        CarrierMessagingService.SEND_STATUS_RETRY_ON_CARRIER_NETWORK,
+                        null /* no sendConfPdu */);
+            }
+        }
+    }
+
+    /**
+     * A callback which notifies carrier messaging app send result. Once the result is ready, the
+     * carrier messaging service connection is disposed.
+     */
+    private final class CarrierSendCompleteCallback extends
+            MmsRequest.CarrierMmsActionCallback {
+        private final Context mContext;
+        private final CarrierSendManager mCarrierSendManager;
+
+        public CarrierSendCompleteCallback(Context context, CarrierSendManager carrierSendManager) {
+            mContext = context;
+            mCarrierSendManager = carrierSendManager;
+        }
+
+        @Override
+        public void onSendMmsComplete(int result, byte[] sendConfPdu) {
+            Log.d(MmsService.TAG, "Carrier app result for send: " + result);
+            mCarrierSendManager.disposeConnection(mContext);
+
+            if (!maybeFallbackToRegularDelivery(result)) {
+                processResult(mContext, toSmsManagerResult(result), sendConfPdu,
+                        0/* httpStatusCode */);
+            }
+        }
+
+        @Override
+        public void onDownloadMmsComplete(int result) {
+            Log.e(MmsService.TAG, "Unexpected onDownloadMmsComplete call with result: " + result);
+        }
     }
 }
