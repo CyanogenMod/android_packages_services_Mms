@@ -80,8 +80,6 @@ public abstract class MmsRequest {
         public boolean writePduToContentUri(final Uri contentUri, final byte[] pdu);
     }
 
-    // The URI of persisted message
-    protected Uri mMessageUri;
     // The reference to the pending requests manager (i.e. the MmsService)
     protected RequestManager mRequestManager;
     // The SIM id
@@ -126,10 +124,9 @@ public abstract class MmsRequest {
         }
     };
 
-    public MmsRequest(RequestManager requestManager, Uri messageUri, int subId,
-            String creator, Bundle configOverrides) {
+    public MmsRequest(RequestManager requestManager, int subId, String creator,
+            Bundle configOverrides) {
         mRequestManager = requestManager;
-        mMessageUri = messageUri;
         mSubId = subId;
         mCreator = creator;
         mMmsConfigOverrides = configOverrides;
@@ -218,7 +215,7 @@ public abstract class MmsRequest {
      * @param httpStatusCode The optional http status code in case of http failure
      */
     public void processResult(Context context, int result, byte[] response, int httpStatusCode) {
-        updateStatus(context, result, response);
+        final Uri messageUri = persistIfRequired(context, result, response);
 
         // Return MMS HTTP request result via PendingIntent
         final PendingIntent pendingIntent = getPendingIntent();
@@ -229,8 +226,8 @@ public abstract class MmsRequest {
             if (response != null) {
                 succeeded = transferResponse(fillIn, response);
             }
-            if (mMessageUri != null) {
-                fillIn.putExtra("uri", mMessageUri.toString());
+            if (messageUri != null) {
+                fillIn.putExtra("uri", messageUri.toString());
             }
             if (result == SmsManager.MMS_ERROR_HTTP_FAILURE && httpStatusCode != 0) {
                 fillIn.putExtra(SmsManager.EXTRA_MMS_HTTP_STATUS, httpStatusCode);
@@ -271,13 +268,15 @@ public abstract class MmsRequest {
     protected abstract int getQueueType();
 
     /**
-     * Update database status of the message represented by this request
+     * Persist message into telephony if required (i.e. when auto-persisting is on or
+     * the calling app is non-default sms app for sending)
      *
      * @param context The context
      * @param result The result code of execution
      * @param response The response body
+     * @return The persisted URI of the message or null if we don't persist or fail
      */
-    protected abstract void updateStatus(Context context, int result, byte[] response);
+    protected abstract Uri persistIfRequired(Context context, int result, byte[] response);
 
     /**
      * Prepare to make the HTTP request - will download message for sending

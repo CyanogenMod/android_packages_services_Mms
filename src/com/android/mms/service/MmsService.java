@@ -44,7 +44,6 @@ import android.util.Log;
 import android.util.SparseArray;
 
 import com.android.internal.telephony.IMms;
-import com.android.internal.telephony.SmsApplication;
 import com.google.android.mms.MmsException;
 import com.google.android.mms.pdu.DeliveryInd;
 import com.google.android.mms.pdu.GenericPdu;
@@ -182,11 +181,7 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
             // Make sure the subId is correct
             subId = checkSubId(subId);
             final SendRequest request = new SendRequest(MmsService.this, subId, contentUri,
-                    null/*messageUri*/, locationUrl, sentIntent, callingPkg, configOverrides);
-            if (SmsApplication.shouldWriteMessageForPackage(callingPkg, MmsService.this)) {
-                // Store the message in outbox first before sending
-                request.storeInOutbox(MmsService.this);
-            }
+                    locationUrl, sentIntent, callingPkg, configOverrides);
             // Try sending via carrier app
             request.trySendingByCarrierApp(MmsService.this);
         }

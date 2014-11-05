@@ -57,7 +57,7 @@ public class DownloadRequest extends MmsRequest {
     public DownloadRequest(RequestManager manager, int subId, String locationUrl,
             Uri contentUri, PendingIntent downloadedIntent, String creator,
             Bundle configOverrides) {
-        super(manager, null/*messageUri*/, subId, creator, configOverrides);
+        super(manager, subId, creator, configOverrides);
         mLocationUrl = locationUrl;
         mDownloadedIntent = downloadedIntent;
         mContentUri = contentUri;
@@ -92,10 +92,92 @@ public class DownloadRequest extends MmsRequest {
     }
 
     @Override
-    protected void updateStatus(Context context, int result, byte[] response) {
-        if (mRequestManager.getAutoPersistingPref()) {
-            storeInboxMessage(context, result, response);
+    protected Uri persistIfRequired(Context context, int result, byte[] response) {
+        if (!mRequestManager.getAutoPersistingPref()) {
+            return null;
         }
+        Log.d(MmsService.TAG, "DownloadRequest.persistIfRequired");
+        if (response == null || response.length < 1) {
+            Log.e(MmsService.TAG, "DownloadRequest.persistIfRequired: empty response");
+            return null;
+        }
+        final long identity = Binder.clearCallingIdentity();
+        try {
+            final GenericPdu pdu = (new PduParser(response)).parse();
+            if (pdu == null || !(pdu instanceof RetrieveConf)) {
+                Log.e(MmsService.TAG, "DownloadRequest.persistIfRequired: invalid parsed PDU");
+                return null;
+            }
+            final RetrieveConf retrieveConf = (RetrieveConf) pdu;
+            final int status = retrieveConf.getRetrieveStatus();
+            if (status != PduHeaders.RETRIEVE_STATUS_OK) {
+                Log.e(MmsService.TAG, "DownloadRequest.persistIfRequired: retrieve failed "
+                        + status);
+                // Update the retrieve status of the NotificationInd
+                final ContentValues values = new ContentValues(1);
+                values.put(Telephony.Mms.RETRIEVE_STATUS, status);
+                SqliteWrapper.update(
+                        context,
+                        context.getContentResolver(),
+                        Telephony.Mms.CONTENT_URI,
+                        values,
+                        LOCATION_SELECTION,
+                        new String[] {
+                                Integer.toString(PduHeaders.MESSAGE_TYPE_NOTIFICATION_IND),
+                                mLocationUrl
+                        });
+                return null;
+            }
+            // Store the downloaded message
+            final PduPersister persister = PduPersister.getPduPersister(context);
+            final Uri messageUri = persister.persist(
+                    pdu,
+                    Telephony.Mms.Inbox.CONTENT_URI,
+                    true/*createThreadId*/,
+                    true/*groupMmsEnabled*/,
+                    null/*preOpenedFiles*/);
+            if (messageUri == null) {
+                Log.e(MmsService.TAG, "DownloadRequest.persistIfRequired: can not persist message");
+                return null;
+            }
+            // Update some of the properties of the message
+            final ContentValues values = new ContentValues();
+            values.put(Telephony.Mms.DATE, System.currentTimeMillis() / 1000L);
+            values.put(Telephony.Mms.READ, 0);
+            values.put(Telephony.Mms.SEEN, 0);
+            if (!TextUtils.isEmpty(mCreator)) {
+                values.put(Telephony.Mms.CREATOR, mCreator);
+            }
+            values.put(Telephony.Mms.SUB_ID, mSubId);
+            if (SqliteWrapper.update(
+                    context,
+                    context.getContentResolver(),
+                    messageUri,
+                    values,
+                    null/*where*/,
+                    null/*selectionArg*/) != 1) {
+                Log.e(MmsService.TAG, "DownloadRequest.persistIfRequired: can not update message");
+            }
+            // Delete the corresponding NotificationInd
+            SqliteWrapper.delete(context,
+                    context.getContentResolver(),
+                    Telephony.Mms.CONTENT_URI,
+                    LOCATION_SELECTION,
+                    new String[]{
+                            Integer.toString(PduHeaders.MESSAGE_TYPE_NOTIFICATION_IND),
+                            mLocationUrl
+                    });
+            return messageUri;
+        } catch (MmsException e) {
+            Log.e(MmsService.TAG, "DownloadRequest.persistIfRequired: can not persist message", e);
+        } catch (SQLiteException e) {
+            Log.e(MmsService.TAG, "DownloadRequest.persistIfRequired: can not update message", e);
+        } catch (RuntimeException e) {
+            Log.e(MmsService.TAG, "DownloadRequest.persistIfRequired: can not parse response", e);
+        } finally {
+            Binder.restoreCallingIdentity(identity);
+        }
+        return null;
     }
 
     /**
@@ -107,68 +189,6 @@ public class DownloadRequest extends MmsRequest {
     @Override
     protected boolean transferResponse(Intent fillIn, final byte[] response) {
         return mRequestManager.writePduToContentUri(mContentUri, response);
-    }
-
-    private void storeInboxMessage(Context context, int result, byte[] response) {
-        if (response == null || response.length < 1) {
-            return;
-        }
-        final long identity = Binder.clearCallingIdentity();
-        try {
-            final GenericPdu pdu = (new PduParser(response)).parse();
-            if (pdu == null || !(pdu instanceof RetrieveConf)) {
-                Log.e(MmsService.TAG, "DownloadRequest.updateStatus: invalid parsed PDU");
-                return;
-            }
-            // Store the downloaded message
-            final PduPersister persister = PduPersister.getPduPersister(context);
-            mMessageUri = persister.persist(
-                    pdu,
-                    Telephony.Mms.Inbox.CONTENT_URI,
-                    true/*createThreadId*/,
-                    true/*groupMmsEnabled*/,
-                    null/*preOpenedFiles*/);
-            if (mMessageUri == null) {
-                Log.e(MmsService.TAG, "DownloadRequest.updateStatus: can not persist message");
-                return;
-            }
-            // Update some of the properties of the message
-            ContentValues values = new ContentValues(5);
-            values.put(Telephony.Mms.DATE, System.currentTimeMillis() / 1000L);
-            values.put(Telephony.Mms.READ, 0);
-            values.put(Telephony.Mms.SEEN, 0);
-            if (!TextUtils.isEmpty(mCreator)) {
-                values.put(Telephony.Mms.CREATOR, mCreator);
-            }
-            values.put(Telephony.Mms.SUB_ID, mSubId);
-            if (SqliteWrapper.update(
-                    context,
-                    context.getContentResolver(),
-                    mMessageUri,
-                    values,
-                    null/*where*/,
-                    null/*selectionArg*/) != 1) {
-                Log.e(MmsService.TAG, "DownloadRequest.updateStatus: can not update message");
-            }
-            // Delete the corresponding NotificationInd
-            SqliteWrapper.delete(context,
-                    context.getContentResolver(),
-                    Telephony.Mms.CONTENT_URI,
-                    LOCATION_SELECTION,
-                    new String[]{
-                            Integer.toString(PduHeaders.MESSAGE_TYPE_NOTIFICATION_IND),
-                            mLocationUrl
-                    }
-            );
-        } catch (MmsException e) {
-            Log.e(MmsService.TAG, "DownloadRequest.updateStatus: can not persist message", e);
-        } catch (SQLiteException e) {
-            Log.e(MmsService.TAG, "DownloadRequest.updateStatus: can not update message", e);
-        } catch (RuntimeException e) {
-            Log.e(MmsService.TAG, "DownloadRequest.updateStatus: can not parse response", e);
-        } finally {
-            Binder.restoreCallingIdentity(identity);
-        }
     }
 
     protected boolean prepareForHttpRequest() {

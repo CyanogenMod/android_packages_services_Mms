@@ -22,7 +22,6 @@ import android.app.PendingIntent;
 import android.content.ContentValues;
 import android.content.Context;
 import android.content.Intent;
-import android.database.sqlite.SQLiteException;
 import android.net.Uri;
 import android.os.Binder;
 import android.os.Bundle;
@@ -33,9 +32,11 @@ import android.telephony.TelephonyManager;
 import android.text.TextUtils;
 import android.util.Log;
 
+import com.android.internal.telephony.SmsApplication;
 import com.android.mms.service.exception.MmsHttpException;
 import com.google.android.mms.MmsException;
 import com.google.android.mms.pdu.GenericPdu;
+import com.google.android.mms.pdu.PduHeaders;
 import com.google.android.mms.pdu.PduParser;
 import com.google.android.mms.pdu.PduPersister;
 import com.google.android.mms.pdu.SendConf;
@@ -53,10 +54,9 @@ public class SendRequest extends MmsRequest {
     private final String mLocationUrl;
     private final PendingIntent mSentIntent;
 
-    public SendRequest(RequestManager manager, int subId, Uri contentUri, Uri messageUri,
-            String locationUrl, PendingIntent sentIntent, String creator,
-            Bundle configOverrides) {
-        super(manager, messageUri, subId, creator, configOverrides);
+    public SendRequest(RequestManager manager, int subId, Uri contentUri, String locationUrl,
+            PendingIntent sentIntent, String creator, Bundle configOverrides) {
+        super(manager, subId, creator, configOverrides);
         mPduUri = contentUri;
         mPduData = null;
         mLocationUrl = locationUrl;
@@ -91,68 +91,84 @@ public class SendRequest extends MmsRequest {
         return MmsService.QUEUE_INDEX_SEND;
     }
 
-    public void storeInOutbox(Context context) {
+    @Override
+    protected Uri persistIfRequired(Context context, int result, byte[] response) {
+        if (!SmsApplication.shouldWriteMessageForPackage(mCreator, context)) {
+            // Not required to persist
+            return null;
+        }
+        Log.d(MmsService.TAG, "SendRequest.persistIfRequired");
+        if (mPduData == null) {
+            Log.e(MmsService.TAG, "SendRequest.persistIfRequired: empty PDU");
+            return null;
+        }
         final long identity = Binder.clearCallingIdentity();
         try {
-            // Read message using phone process identity
-            if (!readPduFromContentUri()) {
-                Log.e(MmsService.TAG, "SendRequest.storeInOutbox: empty PDU");
-                return;
+            // Persist the request PDU first
+            GenericPdu pdu = (new PduParser(mPduData)).parse();
+            if (pdu == null) {
+                Log.e(MmsService.TAG, "SendRequest.persistIfRequired: can't parse input PDU");
+                return null;
             }
-            if (mMessageUri == null) {
-                // This is a new message to send
-                final GenericPdu pdu = (new PduParser(mPduData)).parse();
-                if (pdu == null) {
-                    Log.e(MmsService.TAG, "SendRequest.storeInOutbox: can't parse input PDU");
-                    return;
-                }
-                if (!(pdu instanceof SendReq)) {
-                    Log.d(MmsService.TAG, "SendRequest.storeInOutbox: not SendReq");
-                    return;
-                }
-                final PduPersister persister = PduPersister.getPduPersister(context);
-                mMessageUri = persister.persist(
-                        pdu,
-                        Telephony.Mms.Outbox.CONTENT_URI,
-                        true/*createThreadId*/,
-                        true/*groupMmsEnabled*/,
-                        null/*preOpenedFiles*/);
-                if (mMessageUri == null) {
-                    Log.e(MmsService.TAG, "SendRequest.storeInOutbox: can not persist message");
-                    return;
-                }
-                final ContentValues values = new ContentValues(5);
-                values.put(Telephony.Mms.DATE, System.currentTimeMillis() / 1000L);
-                values.put(Telephony.Mms.READ, 1);
-                values.put(Telephony.Mms.SEEN, 1);
-                if (!TextUtils.isEmpty(mCreator)) {
-                    values.put(Telephony.Mms.CREATOR, mCreator);
-                }
-                values.put(Telephony.Mms.SUB_ID, mSubId);
-                if (SqliteWrapper.update(context, context.getContentResolver(), mMessageUri, values,
-                        null/*where*/, null/*selectionArg*/) != 1) {
-                    Log.e(MmsService.TAG, "SendRequest.storeInOutbox: failed to update message");
-                }
-            } else {
-                // This is a stored message, either in FAILED or DRAFT
-                // Move this to OUTBOX for sending
-                final ContentValues values = new ContentValues(3);
-                // Reset the timestamp
-                values.put(Telephony.Mms.DATE, System.currentTimeMillis() / 1000L);
-                values.put(Telephony.Mms.MESSAGE_BOX, Telephony.Mms.MESSAGE_BOX_OUTBOX);
-                values.put(Telephony.Mms.SUB_ID, mSubId);
-                if (SqliteWrapper.update(context, context.getContentResolver(), mMessageUri, values,
-                        null/*where*/, null/*selectionArg*/) != 1) {
-                    Log.e(MmsService.TAG, "SendRequest.storeInOutbox: failed to update message");
+            if (!(pdu instanceof SendReq)) {
+                Log.d(MmsService.TAG, "SendRequest.persistIfRequired: not SendReq");
+                return null;
+            }
+            final PduPersister persister = PduPersister.getPduPersister(context);
+            final Uri messageUri = persister.persist(
+                    pdu,
+                    Telephony.Mms.Sent.CONTENT_URI,
+                    true/*createThreadId*/,
+                    true/*groupMmsEnabled*/,
+                    null/*preOpenedFiles*/);
+            if (messageUri == null) {
+                Log.e(MmsService.TAG, "SendRequest.persistIfRequired: can not persist message");
+                return null;
+            }
+            // Update the additional columns based on the send result
+            final ContentValues values = new ContentValues();
+            SendConf sendConf = null;
+            if (response != null && response.length > 0) {
+                pdu = (new PduParser(response)).parse();
+                if (pdu != null && pdu instanceof SendConf) {
+                    sendConf = (SendConf) pdu;
                 }
             }
+            if (result != Activity.RESULT_OK
+                    || sendConf == null
+                    || sendConf.getResponseStatus() != PduHeaders.RESPONSE_STATUS_OK) {
+                // Since we can't persist a message directly into FAILED box,
+                // we have to update the column after we persist it into SENT box.
+                // The gap between the state change is tiny so I would not expect
+                // it to cause any serious problem
+                // TODO: we should add a "failed" URI for this in MmsProvider?
+                values.put(Telephony.Mms.MESSAGE_BOX, Telephony.Mms.MESSAGE_BOX_FAILED);
+            }
+            if (sendConf != null) {
+                values.put(Telephony.Mms.RESPONSE_STATUS, sendConf.getResponseStatus());
+                values.put(Telephony.Mms.MESSAGE_ID,
+                        PduPersister.toIsoString(sendConf.getMessageId()));
+            }
+            values.put(Telephony.Mms.DATE, System.currentTimeMillis() / 1000L);
+            values.put(Telephony.Mms.READ, 1);
+            values.put(Telephony.Mms.SEEN, 1);
+            if (!TextUtils.isEmpty(mCreator)) {
+                values.put(Telephony.Mms.CREATOR, mCreator);
+            }
+            values.put(Telephony.Mms.SUB_ID, mSubId);
+            if (SqliteWrapper.update(context, context.getContentResolver(), messageUri, values,
+                    null/*where*/, null/*selectionArg*/) != 1) {
+                Log.e(MmsService.TAG, "SendRequest.persistIfRequired: failed to update message");
+            }
+            return messageUri;
         } catch (MmsException e) {
-            Log.e(MmsService.TAG, "SendRequest.storeInOutbox: can not persist/update message", e);
+            Log.e(MmsService.TAG, "SendRequest.persistIfRequired: can not persist message", e);
         } catch (RuntimeException e) {
-            Log.e(MmsService.TAG, "SendRequest.storeInOutbox: unexpected parsing failure", e);
+            Log.e(MmsService.TAG, "SendRequest.persistIfRequired: unexpected parsing failure", e);
         } finally {
             Binder.restoreCallingIdentity(identity);
         }
+        return null;
     }
 
     /**
@@ -166,40 +182,6 @@ public class SendRequest extends MmsRequest {
         final int bytesTobeRead = mMmsConfig.getMaxMessageSize();
         mPduData = mRequestManager.readPduFromContentUri(mPduUri, bytesTobeRead);
         return (mPduData != null);
-    }
-
-    @Override
-    protected void updateStatus(Context context, int result, byte[] response) {
-        if (mMessageUri == null) {
-            return;
-        }
-        final long identity = Binder.clearCallingIdentity();
-        try {
-            final int messageStatus = result == Activity.RESULT_OK ?
-                    Telephony.Mms.MESSAGE_BOX_SENT : Telephony.Mms.MESSAGE_BOX_FAILED;
-            SendConf sendConf = null;
-            if (response != null && response.length > 0) {
-                final GenericPdu pdu = (new PduParser(response)).parse();
-                if (pdu != null && pdu instanceof SendConf) {
-                    sendConf = (SendConf) pdu;
-                }
-            }
-            final ContentValues values = new ContentValues(3);
-            values.put(Telephony.Mms.MESSAGE_BOX, messageStatus);
-            if (sendConf != null) {
-                values.put(Telephony.Mms.RESPONSE_STATUS, sendConf.getResponseStatus());
-                values.put(Telephony.Mms.MESSAGE_ID,
-                        PduPersister.toIsoString(sendConf.getMessageId()));
-            }
-            SqliteWrapper.update(context, context.getContentResolver(), mMessageUri, values,
-                    null/*where*/, null/*selectionArg*/);
-        } catch (SQLiteException e) {
-            Log.e(MmsService.TAG, "SendRequest.updateStatus: can not update message", e);
-        } catch (RuntimeException e) {
-            Log.e(MmsService.TAG, "SendRequest.updateStatus: can not parse response", e);
-        } finally {
-            Binder.restoreCallingIdentity(identity);
-        }
     }
 
     /**
