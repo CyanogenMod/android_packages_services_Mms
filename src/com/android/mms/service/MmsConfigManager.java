@@ -21,7 +21,8 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.res.Configuration;
-import android.telephony.SubInfoRecord;
+import android.telephony.SubscriptionInfo;
+import android.telephony.SubscriptionListener;
 import android.telephony.SubscriptionManager;
 import android.text.TextUtils;
 import android.util.ArrayMap;
@@ -63,27 +64,37 @@ public class MmsConfigManager {
         public void onReceive(Context context, Intent intent) {
             String action = intent.getAction();
             Log.i(TAG, "mReceiver action: " + action);
-            if (action.equals(TelephonyIntents.ACTION_SUBINFO_RECORD_UPDATED) ||
-                    action.equals(TelephonyIntents.ACTION_SUBINFO_CONTENT_CHANGE) ||
-                    action.equals(IccCardConstants.INTENT_VALUE_ICC_LOADED)) {
+            if (action.equals(IccCardConstants.INTENT_VALUE_ICC_LOADED)) {
                 loadInBackground();
             }
         }
     };
 
+    private final SubscriptionListener mSubscriptionListener = new SubscriptionListener() {
+        @Override
+        public void onSubscriptionInfoChanged() {
+            loadInBackground();
+        }
+    };
+
     public void init(final Context context) {
-        IntentFilter intentFilter =
-                new IntentFilter(TelephonyIntents.ACTION_SUBINFO_RECORD_UPDATED);
-        context.registerReceiver(mReceiver, intentFilter);
-        IntentFilter intentFilterChange =
-                new IntentFilter(TelephonyIntents.ACTION_SUBINFO_CONTENT_CHANGE);
-        context.registerReceiver(mReceiver, intentFilterChange);
+        mContext = context;
+
+        // TODO: When this object "finishes" we should unregister.
         IntentFilter intentFilterLoaded =
                 new IntentFilter(IccCardConstants.INTENT_VALUE_ICC_LOADED);
         context.registerReceiver(mReceiver, intentFilterLoaded);
 
-        mContext = context;
-        loadInBackground();
+        // TODO: When this object "finishes" we should unregister by invoking
+        // SubscriptionManager.unregister(mContext, mSubscriptionListener);
+        // This is not strictly necessary because it will be unregistered if the
+        // notification fails but it is good form.
+
+        // Register for SubscriptionInfo list changes which is guaranteed
+        // to invoke onSubscriptionInfoChanged and which in turns calls
+        // loadInBackgroud.
+        SubscriptionManager.register(mContext, mSubscriptionListener,
+                SubscriptionListener.LISTEN_SUBSCRIPTION_INFO_LIST_CHANGED);
     }
 
     private void loadInBackground() {
@@ -108,7 +119,7 @@ public class MmsConfigManager {
      * @return MmsConfig for the particular subscription id. This function can return null if
      *         the MmsConfig cannot be found or if this function is called before the
      *         TelephonyManager has setup the SIMs or if loadInBackground is still spawning a
-     *         thread after a recent ACTION_SUBINFO_RECORD_UPDATED event.
+     *         thread after a recent LISTEN_SUBSCRIPTION_INFO_LIST_CHANGED event.
      */
     public MmsConfig getMmsConfigBySubId(int subId) {
         MmsConfig mmsConfig;
@@ -126,7 +137,7 @@ public class MmsConfigManager {
      *
      */
     private void load(Context context) {
-        List<SubInfoRecord> subs = SubscriptionManager.getActiveSubInfoList();
+        List<SubscriptionInfo> subs = SubscriptionManager.getActiveSubscriptionInfoList();
         if (subs == null || subs.size() < 1) {
             Log.e(TAG, "MmsConfigManager.load -- empty getActiveSubInfoList");
             return;
@@ -134,7 +145,7 @@ public class MmsConfigManager {
         // Load all the mms_config.xml files in a separate map and then swap with the
         // real map at the end so we don't block anyone sync'd on the real map.
         final Map<Integer, MmsConfig> newConfigMap = new ArrayMap<Integer, MmsConfig>();
-        for (SubInfoRecord sub : subs) {
+        for (SubscriptionInfo sub : subs) {
             Configuration configuration = new Configuration();
             if (sub.getMcc() == 0 && sub.getMnc() == 0) {
                 Configuration config = mContext.getResources().getConfiguration();
