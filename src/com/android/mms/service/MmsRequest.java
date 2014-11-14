@@ -172,6 +172,7 @@ public abstract class MmsRequest {
                     networkManager.acquireNetwork();
                     try {
                         final ApnSettings apn = ApnSettings.load(context, null/*apnName*/, mSubId);
+                        Log.i(MmsService.TAG, "MmsRequest: using " + apn.toString());
                         response = doHttp(context, networkManager, apn);
                         result = Activity.RESULT_OK;
                         // Success
