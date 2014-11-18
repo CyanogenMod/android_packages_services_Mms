@@ -104,8 +104,9 @@ public class SendRequest extends MmsRequest {
         }
         final long identity = Binder.clearCallingIdentity();
         try {
+            final boolean supportContentDisposition = mMmsConfig.getSupportMmsContentDisposition();
             // Persist the request PDU first
-            GenericPdu pdu = (new PduParser(mPduData)).parse();
+            GenericPdu pdu = (new PduParser(mPduData, supportContentDisposition)).parse();
             if (pdu == null) {
                 Log.e(MmsService.TAG, "SendRequest.persistIfRequired: can't parse input PDU");
                 return null;
@@ -129,7 +130,7 @@ public class SendRequest extends MmsRequest {
             final ContentValues values = new ContentValues();
             SendConf sendConf = null;
             if (response != null && response.length > 0) {
-                pdu = (new PduParser(response)).parse();
+                pdu = (new PduParser(response, supportContentDisposition)).parse();
                 if (pdu != null && pdu instanceof SendConf) {
                     sendConf = (SendConf) pdu;
                 }

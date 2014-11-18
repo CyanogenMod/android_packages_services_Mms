@@ -103,7 +103,8 @@ public class DownloadRequest extends MmsRequest {
         }
         final long identity = Binder.clearCallingIdentity();
         try {
-            final GenericPdu pdu = (new PduParser(response)).parse();
+            final GenericPdu pdu =
+                    (new PduParser(response, mMmsConfig.getSupportMmsContentDisposition())).parse();
             if (pdu == null || !(pdu instanceof RetrieveConf)) {
                 Log.e(MmsService.TAG, "DownloadRequest.persistIfRequired: invalid parsed PDU");
                 return null;

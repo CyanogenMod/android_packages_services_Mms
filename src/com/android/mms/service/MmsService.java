@@ -23,7 +23,6 @@ import android.content.ContentUris;
 import android.content.ContentValues;
 import android.content.Intent;
 import android.content.SharedPreferences;
-import android.database.Cursor;
 import android.database.sqlite.SQLiteException;
 import android.net.Uri;
 import android.os.Binder;
@@ -48,7 +47,6 @@ import com.google.android.mms.MmsException;
 import com.google.android.mms.pdu.DeliveryInd;
 import com.google.android.mms.pdu.GenericPdu;
 import com.google.android.mms.pdu.NotificationInd;
-import com.google.android.mms.pdu.PduComposer;
 import com.google.android.mms.pdu.PduParser;
 import com.google.android.mms.pdu.PduPersister;
 import com.google.android.mms.pdu.ReadOrigInd;
@@ -544,7 +542,7 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
         // between the calling uid and the package uid
         final long identity = Binder.clearCallingIdentity();
         try {
-            final GenericPdu pdu = (new PduParser(pduData)).parse();
+            final GenericPdu pdu = parsePduForAnyCarrier(pduData);
             if (pdu == null) {
                 Log.e(TAG, "importMessage: can't parse input PDU");
                 return null;
@@ -717,7 +715,7 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
         // between the calling uid and the package uid
         final long identity = Binder.clearCallingIdentity();
         try {
-            final GenericPdu pdu = (new PduParser(pduData)).parse();
+            final GenericPdu pdu = parsePduForAnyCarrier(pduData);
             if (pdu == null) {
                 Log.e(TAG, "addMmsDraft: can't parse input PDU");
                 return null;
@@ -758,67 +756,29 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
         return null;
     }
 
-    private boolean isFailedOrDraft(Uri messageUri) {
-        // Clear the calling identity and query the database using the phone user id
-        // Otherwise the AppOps check in TelephonyProvider would complain about mismatch
-        // between the calling uid and the package uid
-        final long identity = Binder.clearCallingIdentity();
-        Cursor cursor = null;
+    /**
+     * Try parsing a PDU without knowing the carrier. This is useful for importing
+     * MMS or storing draft when carrier info is not available
+     *
+     * @param data The PDU data
+     * @return Parsed PDU, null if failed to parse
+     */
+    private static GenericPdu parsePduForAnyCarrier(final byte[] data) {
+        GenericPdu pdu = null;
         try {
-            cursor = getContentResolver().query(
-                    messageUri,
-                    new String[]{ Telephony.Mms.MESSAGE_BOX },
-                    null/*selection*/,
-                    null/*selectionArgs*/,
-                    null/*sortOrder*/);
-            if (cursor != null && cursor.moveToFirst()) {
-                final int box = cursor.getInt(0);
-                return box == Telephony.Mms.MESSAGE_BOX_DRAFTS
-                        || box == Telephony.Mms.MESSAGE_BOX_FAILED;
-            }
-        } catch (SQLiteException e) {
-            Log.e(TAG, "isFailedOrDraft: query message type failed", e);
-        } finally {
-            if (cursor != null) {
-                cursor.close();
-            }
-            Binder.restoreCallingIdentity(identity);
-        }
-        return false;
-    }
-
-    private byte[] loadPdu(Uri messageUri) {
-        // Clear the calling identity and query the database using the phone user id
-        // Otherwise the AppOps check in TelephonyProvider would complain about mismatch
-        // between the calling uid and the package uid
-        final long identity = Binder.clearCallingIdentity();
-        try {
-            final PduPersister persister = PduPersister.getPduPersister(this);
-            final GenericPdu pdu = persister.load(messageUri);
-            if (pdu == null) {
-                Log.e(TAG, "loadPdu: failed to load PDU from " + messageUri.toString());
-                return null;
-            }
-            final PduComposer composer = new PduComposer(this, pdu);
-            return composer.make();
-        } catch (MmsException e) {
-            Log.e(TAG, "loadPdu: failed to load PDU from " + messageUri.toString(), e);
+            pdu = (new PduParser(data, true/*parseContentDisposition*/)).parse();
         } catch (RuntimeException e) {
-            Log.e(TAG, "loadPdu: failed to serialize PDU", e);
-        } finally {
-            Binder.restoreCallingIdentity(identity);
+            Log.d(TAG, "parsePduForAnyCarrier: Failed to parse PDU with content disposition", e);
         }
-        return null;
-    }
-
-    private void returnUnspecifiedFailure(PendingIntent pi) {
-        if (pi != null) {
+        if (pdu == null) {
             try {
-                pi.send(SmsManager.MMS_ERROR_UNSPECIFIED);
-            } catch (PendingIntent.CanceledException e) {
-                // ignore
+                pdu = (new PduParser(data, false/*parseContentDisposition*/)).parse();
+            } catch (RuntimeException e) {
+                Log.d(TAG, "parsePduForAnyCarrier: Failed to parse PDU without content disposition",
+                        e);
             }
         }
+        return pdu;
     }
 
     @Override
