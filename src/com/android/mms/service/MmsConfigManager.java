@@ -22,9 +22,8 @@ import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.res.Configuration;
 import android.telephony.SubscriptionInfo;
-import android.telephony.SubscriptionListener;
 import android.telephony.SubscriptionManager;
-import android.text.TextUtils;
+import android.telephony.SubscriptionManager.OnSubscriptionsChangedListener;
 import android.util.ArrayMap;
 import android.util.Log;
 
@@ -32,7 +31,6 @@ import java.util.List;
 import java.util.Map;
 
 import com.android.internal.telephony.IccCardConstants;
-import com.android.internal.telephony.TelephonyIntents;
 
 /**
  * This class manages cached copies of all the MMS configuration for each subscription ID.
@@ -52,6 +50,7 @@ public class MmsConfigManager {
     // Map the various subIds to their corresponding MmsConfigs.
     private final Map<Integer, MmsConfig> mSubIdConfigMap = new ArrayMap<Integer, MmsConfig>();
     private Context mContext;
+    private SubscriptionManager mSubscriptionManager;
 
     /**
      * This receiver listens for changes made to SubInfoRecords and for a broadcast telling us
@@ -70,15 +69,18 @@ public class MmsConfigManager {
         }
     };
 
-    private final SubscriptionListener mSubscriptionListener = new SubscriptionListener() {
+    private final OnSubscriptionsChangedListener mOnSubscriptionsChangedListener =
+            new OnSubscriptionsChangedListener() {
         @Override
-        public void onSubscriptionInfoChanged() {
+        public void onSubscriptionsChanged() {
             loadInBackground();
         }
     };
 
+
     public void init(final Context context) {
         mContext = context;
+        mSubscriptionManager = SubscriptionManager.from(context);
 
         // TODO: When this object "finishes" we should unregister.
         IntentFilter intentFilterLoaded =
@@ -86,15 +88,14 @@ public class MmsConfigManager {
         context.registerReceiver(mReceiver, intentFilterLoaded);
 
         // TODO: When this object "finishes" we should unregister by invoking
-        // SubscriptionManager.unregister(mContext, mSubscriptionListener);
+        // SubscriptionManager.getInstance(mContext).unregister(mOnSubscriptionsChangedListener);
         // This is not strictly necessary because it will be unregistered if the
         // notification fails but it is good form.
 
         // Register for SubscriptionInfo list changes which is guaranteed
-        // to invoke onSubscriptionInfoChanged and which in turns calls
-        // loadInBackgroud.
-        SubscriptionManager.register(mContext, mSubscriptionListener,
-                SubscriptionListener.LISTEN_SUBSCRIPTION_INFO_LIST_CHANGED);
+        // to invoke onSubscriptionsChanged the first time.
+        SubscriptionManager.from(mContext).registerOnSubscriptionsChangedListener(
+                mOnSubscriptionsChangedListener);
     }
 
     private void loadInBackground() {
@@ -137,7 +138,7 @@ public class MmsConfigManager {
      *
      */
     private void load(Context context) {
-        List<SubscriptionInfo> subs = SubscriptionManager.getActiveSubscriptionInfoList();
+        List<SubscriptionInfo> subs = mSubscriptionManager.getActiveSubscriptionInfoList();
         if (subs == null || subs.size() < 1) {
             Log.e(TAG, "MmsConfigManager.load -- empty getActiveSubInfoList");
             return;

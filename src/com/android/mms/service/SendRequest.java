@@ -156,7 +156,7 @@ public class SendRequest extends MmsRequest {
             if (!TextUtils.isEmpty(mCreator)) {
                 values.put(Telephony.Mms.CREATOR, mCreator);
             }
-            values.put(Telephony.Mms.SUB_ID, mSubId);
+            values.put(Telephony.Mms.SUBSCRIPTION_ID, mSubId);
             if (SqliteWrapper.update(context, context.getContentResolver(), messageUri, values,
                     null/*where*/, null/*selectionArg*/) != 1) {
                 Log.e(MmsService.TAG, "SendRequest.persistIfRequired: failed to update message");
