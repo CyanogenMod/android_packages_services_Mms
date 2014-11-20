@@ -163,7 +163,7 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
         if (!SubscriptionManager.isValidSubId(subId)) {
             throw new RuntimeException("Invalid subId " + subId);
         }
-        if (subId == SubscriptionManager.DEFAULT_SUBSCRIPTION_ID) {
+        if (subId == SubscriptionManager.DEFAULT_SUB_ID) {
             return SubscriptionManager.getDefaultSmsSubId();
         }
         return subId;
@@ -449,11 +449,11 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
 
     private void movePendingSimRequestsToRunningSynchronized() {
         Log.d(TAG, "Schedule requests pending on SIM");
-        mCurrentSubId = SubscriptionManager.INVALID_SUBSCRIPTION_ID;
+        mCurrentSubId = SubscriptionManager.INVALID_SUB_ID;
         while (mPendingSimRequestQueue.size() > 0) {
             final MmsRequest request = mPendingSimRequestQueue.peek();
             if (request != null) {
-                if (mCurrentSubId == SubscriptionManager.INVALID_SUBSCRIPTION_ID ||
+                if (mCurrentSubId == SubscriptionManager.INVALID_SUB_ID ||
                         mCurrentSubId == request.getSubId()) {
                     // First or subsequent requests with same SIM ID
                     mPendingSimRequestQueue.remove();
@@ -486,7 +486,7 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
         MmsConfigManager.getInstance().init(this);
         // Initialize running request state
         synchronized (this) {
-            mCurrentSubId = SubscriptionManager.INVALID_SUBSCRIPTION_ID;
+            mCurrentSubId = SubscriptionManager.INVALID_SUB_ID;
             mRunningRequestCount = 0;
         }
     }
