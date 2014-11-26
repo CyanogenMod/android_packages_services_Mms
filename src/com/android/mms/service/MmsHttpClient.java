@@ -16,7 +16,6 @@
 
 package com.android.mms.service;
 
-import javax.net.SocketFactory;
 import android.content.Context;
 import android.text.TextUtils;
 import android.util.Log;
@@ -45,6 +44,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import javax.net.SocketFactory;
 
 /**
  * MMS HTTP client for sending and downloading MMS messages
@@ -125,14 +125,14 @@ public class MmsHttpClient {
             connection.setRequestProperty(
                     HEADER_ACCEPT_LANGUAGE, getCurrentAcceptLanguage(Locale.getDefault()));
             // Header: User-Agent
-            connection.setRequestProperty(HEADER_USER_AGENT, mmsConfig.getUserAgent());
+            final String userAgent = mmsConfig.getUserAgent();
+            Log.i(MmsService.TAG, "HTTP: User-Agent=" + userAgent);
+            connection.setRequestProperty(HEADER_USER_AGENT, userAgent);
             // Header: x-wap-profile
             final String uaProfUrlTagName = mmsConfig.getUaProfTagName();
             final String uaProfUrl = mmsConfig.getUaProfUrl();
             if (uaProfUrl != null) {
-                if (Log.isLoggable(MmsService.TAG, Log.VERBOSE)) {
-                    Log.v(MmsService.TAG, "HTTP: UaProfUrl=" + uaProfUrl);
-                }
+                Log.i(MmsService.TAG, "HTTP: UaProfUrl=" + uaProfUrl);
                 connection.setRequestProperty(uaProfUrlTagName, uaProfUrl);
             }
             // Add extra headers specified by mms_config.xml's httpparams
@@ -163,6 +163,15 @@ public class MmsHttpClient {
                 connection.setRequestMethod(METHOD_GET);
             }
             // Get response
+            final int responseCode = connection.getResponseCode();
+            final String responseMessage = connection.getResponseMessage();
+            Log.d(MmsService.TAG, "HTTP: " + responseCode + " " + responseMessage);
+            if (Log.isLoggable(MmsService.TAG, Log.VERBOSE)) {
+                logHttpHeaders(connection.getHeaderFields());
+            }
+            if (responseCode / 100 != 2) {
+                throw new MmsHttpException(responseCode, responseMessage);
+            }
             final InputStream in = new BufferedInputStream(connection.getInputStream());
             final ByteArrayOutputStream byteOut = new ByteArrayOutputStream();
             final byte[] buf = new byte[4096];
@@ -172,17 +181,6 @@ public class MmsHttpClient {
             }
             in.close();
             final byte[] responseBody = byteOut.toByteArray();
-            final int responseCode = connection.getResponseCode();
-            final String responseMessage = connection.getResponseMessage();
-            Log.d(MmsService.TAG, "HTTP: " + responseCode + " " + responseMessage);
-            if (Log.isLoggable(MmsService.TAG, Log.VERBOSE)) {
-                logHttpHeaders(connection.getHeaderFields());
-            }
-            if (responseCode / 100 != 2) {
-                Log.e(MmsService.TAG, "HTTP: response="
-                        + (responseBody != null ? " " + new String(responseBody, "UTF=8") : ""));
-                throw new MmsHttpException(responseCode, responseMessage);
-            }
             Log.d(MmsService.TAG, "HTTP: response size="
                     + (responseBody != null ? responseBody.length : 0));
             return responseBody;

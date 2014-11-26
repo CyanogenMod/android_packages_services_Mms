@@ -129,8 +129,7 @@ public class MmsNetworkManager implements HostResolver {
             }
             // Timed out, so release the request and fail
             Log.d(MmsService.TAG, "MmsNetworkManager: timed out");
-            releaseRequest(mNetworkCallback);
-            resetLocked();
+            releaseRequestLocked(mNetworkCallback);
             throw new MmsNetworkException("Acquiring network timed out");
         }
     }
@@ -144,8 +143,7 @@ public class MmsNetworkManager implements HostResolver {
                 mMmsRequestCount -= 1;
                 Log.d(MmsService.TAG, "MmsNetworkManager: release, count=" + mMmsRequestCount);
                 if (mMmsRequestCount < 1) {
-                    releaseRequest(mNetworkCallback);
-                    resetLocked();
+                    releaseRequestLocked(mNetworkCallback);
                 }
             }
         }
@@ -172,10 +170,7 @@ public class MmsNetworkManager implements HostResolver {
                 super.onLost(network);
                 Log.d(MmsService.TAG, "NetworkCallbackListener.onLost: network=" + network);
                 synchronized (MmsNetworkManager.this) {
-                    releaseRequest(this);
-                    if (mNetworkCallback == this) {
-                        resetLocked();
-                    }
+                    releaseRequestLocked(this);
                     MmsNetworkManager.this.notifyAll();
                 }
             }
@@ -185,10 +180,7 @@ public class MmsNetworkManager implements HostResolver {
                 super.onUnavailable();
                 Log.d(MmsService.TAG, "NetworkCallbackListener.onUnavailable");
                 synchronized (MmsNetworkManager.this) {
-                    releaseRequest(this);
-                    if (mNetworkCallback == this) {
-                        resetLocked();
-                    }
+                    releaseRequestLocked(this);
                     MmsNetworkManager.this.notifyAll();
                 }
             }
@@ -202,11 +194,12 @@ public class MmsNetworkManager implements HostResolver {
      *
      * @param callback the {@link android.net.ConnectivityManager.NetworkCallback} to unregister
      */
-    private void releaseRequest(ConnectivityManager.NetworkCallback callback) {
+    private void releaseRequestLocked(ConnectivityManager.NetworkCallback callback) {
         if (callback != null) {
             final ConnectivityManager connectivityManager = getConnectivityManager();
             connectivityManager.unregisterNetworkCallback(callback);
         }
+        resetLocked();
     }
 
     /**
@@ -224,14 +217,17 @@ public class MmsNetworkManager implements HostResolver {
         mMmsHttpClient = null;
     }
 
+    private static final InetAddress[] EMPTY_ADDRESS_ARRAY = new InetAddress[0];
     @Override
     public InetAddress[] getAllByName(String host) throws UnknownHostException {
+        Network network = null;
         synchronized (this) {
-            if (mNetwork != null) {
-                return mNetwork.getAllByName(host);
+            if (mNetwork == null) {
+                return EMPTY_ADDRESS_ARRAY;
             }
-            return new InetAddress[0];
+            network = mNetwork;
         }
+        return network.getAllByName(host);
     }
 
     private ConnectivityManager getConnectivityManager() {
