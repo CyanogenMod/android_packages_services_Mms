@@ -132,8 +132,19 @@ public abstract class MmsRequest {
             for (int i = 0; i < RETRY_TIMES; i++) {
                 try {
                     networkManager.acquireNetwork();
+                    final String apnName = networkManager.getApnName();
                     try {
-                        final ApnSettings apn = ApnSettings.load(context, null/*apnName*/, mSubId);
+                        ApnSettings apn = null;
+                        try {
+                            apn = ApnSettings.load(context, apnName, mSubId);
+                        } catch (ApnException e) {
+                            // If no APN could be found, fall back to trying without the APN name
+                            if (apnName == null) {
+                                throw (e); // If the APN name was already null then throw the exception on
+                            }
+                            Log.i(MmsService.TAG, "MmsRequest: No match with APN name:" + apnName + ", try with no name");
+                            apn = ApnSettings.load(context, null, mSubId);
+                        }
                         Log.i(MmsService.TAG, "MmsRequest: using " + apn.toString());
                         response = doHttp(context, networkManager, apn);
                         result = Activity.RESULT_OK;
