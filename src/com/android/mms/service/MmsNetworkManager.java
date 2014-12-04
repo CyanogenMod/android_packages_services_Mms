@@ -21,6 +21,7 @@ import android.net.ConnectivityManager;
 import android.net.Network;
 import android.net.NetworkCapabilities;
 import android.net.NetworkRequest;
+import android.net.NetworkInfo;
 import android.os.SystemClock;
 import android.provider.Settings;
 import android.util.Log;
@@ -269,5 +270,29 @@ public class MmsNetworkManager implements HostResolver {
             }
             return mMmsHttpClient;
         }
+    }
+
+    /**
+     * Get the APN name for the active network
+     *
+     * @return The APN name if available, otherwise null
+     */
+    public String getApnName() {
+        Network network = null;
+        synchronized (this) {
+            if (mNetwork == null) {
+                Log.d(MmsService.TAG, "MmsNetworkManager: getApnName: network not available");
+                return null;
+            }
+            network = mNetwork;
+        }
+        String apnName = null;
+        final ConnectivityManager connectivityManager = getConnectivityManager();
+        NetworkInfo mmsNetworkInfo = connectivityManager.getNetworkInfo(network);
+        if (mmsNetworkInfo != null) {
+            apnName = mmsNetworkInfo.getExtraInfo();
+        }
+        Log.d(MmsService.TAG, "MmsNetworkManager: getApnName: " + apnName);
+        return apnName;
     }
 }
