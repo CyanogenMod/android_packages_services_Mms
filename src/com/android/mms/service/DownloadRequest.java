@@ -26,8 +26,13 @@ import android.database.sqlite.SQLiteException;
 import android.net.Uri;
 import android.os.Binder;
 import android.os.Bundle;
+import android.os.RemoteException;
 import android.os.UserHandle;
 import android.provider.Telephony;
+import android.service.carrier.CarrierMessagingService;
+import android.service.carrier.ICarrierMessagingCallback;
+import android.service.carrier.ICarrierMessagingService;
+import android.telephony.CarrierMessagingServiceManager;
 import android.telephony.TelephonyManager;
 import android.text.TextUtils;
 import android.util.Log;
@@ -192,44 +197,92 @@ public class DownloadRequest extends MmsRequest {
         return mRequestManager.writePduToContentUri(mContentUri, response);
     }
 
+    @Override
     protected boolean prepareForHttpRequest() {
         return true;
     }
 
     /**
-     * Try downloading via the carrier app by sending intent.
+     * Try downloading via the carrier app.
      *
      * @param context The context
+     * @param carrierMessagingServicePackage The carrier messaging service handling the download
      */
-    public void tryDownloadingByCarrierApp(Context context) {
-        TelephonyManager telephonyManager =
-                (TelephonyManager) context.getSystemService(Context.TELEPHONY_SERVICE);
-        Intent intent = new Intent(Telephony.Mms.Intents.MMS_DOWNLOAD_ACTION);
-        List<String> carrierPackages = telephonyManager.getCarrierPackageNamesForIntent(
-                intent);
-
-        if (carrierPackages == null || carrierPackages.size() != 1) {
-            mRequestManager.addSimRequest(this);
-        } else {
-            intent.setPackage(carrierPackages.get(0));
-            intent.putExtra(Telephony.Mms.Intents.EXTRA_MMS_LOCATION_URL, mLocationUrl);
-            intent.putExtra(Telephony.Mms.Intents.EXTRA_MMS_CONTENT_URI, mContentUri);
-            intent.addFlags(Intent.FLAG_RECEIVER_NO_ABORT);
-            context.sendOrderedBroadcastAsUser(
-                    intent,
-                    UserHandle.OWNER,
-                    android.Manifest.permission.RECEIVE_MMS,
-                    AppOpsManager.OP_RECEIVE_MMS,
-                    mCarrierAppResultReceiver,
-                    null/*scheduler*/,
-                    Activity.RESULT_CANCELED,
-                    null/*initialData*/,
-                    null/*initialExtras*/);
-        }
+    public void tryDownloadingByCarrierApp(Context context, String carrierMessagingServicePackage) {
+        final CarrierDownloadManager carrierDownloadManger = new CarrierDownloadManager();
+        final CarrierDownloadCompleteCallback downloadCallback =
+                new CarrierDownloadCompleteCallback(context, carrierDownloadManger);
+        carrierDownloadManger.downloadMms(context, carrierMessagingServicePackage,
+                downloadCallback);
     }
 
     @Override
     protected void revokeUriPermission(Context context) {
         context.revokeUriPermission(mContentUri, Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+    }
+
+    /**
+     * Downloads the MMS through through the carrier app.
+     */
+    private final class CarrierDownloadManager extends CarrierMessagingServiceManager {
+        // Initialized in downloadMms
+        private volatile CarrierDownloadCompleteCallback mCarrierDownloadCallback;
+
+        void downloadMms(Context context, String carrierMessagingServicePackage,
+                CarrierDownloadCompleteCallback carrierDownloadCallback) {
+            mCarrierDownloadCallback = carrierDownloadCallback;
+            if (bindToCarrierMessagingService(context, carrierMessagingServicePackage)) {
+                Log.v(MmsService.TAG, "bindService() for carrier messaging service succeeded");
+            } else {
+                Log.e(MmsService.TAG, "bindService() for carrier messaging service failed");
+                carrierDownloadCallback.onDownloadMmsComplete(
+                        CarrierMessagingService.DOWNLOAD_STATUS_RETRY_ON_CARRIER_NETWORK);
+            }
+        }
+
+        @Override
+        protected void onServiceReady(ICarrierMessagingService carrierMessagingService) {
+            try {
+                carrierMessagingService.downloadMms(mContentUri, mSubId, Uri.parse(mLocationUrl),
+                        mCarrierDownloadCallback);
+            } catch (RemoteException e) {
+                Log.e(MmsService.TAG,
+                        "Exception downloading MMS using the carrier messaging service: " + e);
+                mCarrierDownloadCallback.onDownloadMmsComplete(
+                        CarrierMessagingService.DOWNLOAD_STATUS_RETRY_ON_CARRIER_NETWORK);
+            }
+        }
+    }
+
+    /**
+     * A callback which notifies carrier messaging app send result. Once the result is ready, the
+     * carrier messaging service connection is disposed.
+     */
+    private final class CarrierDownloadCompleteCallback extends
+            MmsRequest.CarrierMmsActionCallback {
+        private final Context mContext;
+        private final CarrierDownloadManager mCarrierDownloadManager;
+
+        public CarrierDownloadCompleteCallback(Context context,
+                CarrierDownloadManager carrierDownloadManager) {
+            mContext = context;
+            mCarrierDownloadManager = carrierDownloadManager;
+        }
+
+        @Override
+        public void onSendMmsComplete(int result, byte[] sendConfPdu) {
+            Log.e(MmsService.TAG, "Unexpected onSendMmsComplete call with result: " + result);
+        }
+
+        @Override
+        public void onDownloadMmsComplete(int result) {
+            Log.d(MmsService.TAG, "Carrier app result for download: " + result);
+            mCarrierDownloadManager.disposeConnection(mContext);
+
+            if (!maybeFallbackToRegularDelivery(result)) {
+                processResult(mContext, toSmsManagerResult(result), null/* response */,
+                        0/* httpStatusCode */);
+            }
+        }
     }
 }

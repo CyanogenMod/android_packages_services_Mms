@@ -16,6 +16,7 @@
 
 package com.android.mms.service;
 
+import android.annotation.Nullable;
 import android.app.Activity;
 import android.app.PendingIntent;
 import android.content.BroadcastReceiver;
@@ -24,6 +25,8 @@ import android.content.Intent;
 import android.net.Uri;
 import android.os.Bundle;
 import android.provider.Telephony;
+import android.service.carrier.CarrierMessagingService;
+import android.service.carrier.ICarrierMessagingCallback;
 import android.telephony.SmsManager;
 import android.util.Log;
 
@@ -31,26 +34,18 @@ import com.android.mms.service.exception.ApnException;
 import com.android.mms.service.exception.MmsHttpException;
 import com.android.mms.service.exception.MmsNetworkException;
 
+import java.util.List;
+
 /**
  * Base class for MMS requests. This has the common logic of sending/downloading MMS.
  */
 public abstract class MmsRequest {
     private static final int RETRY_TIMES = 3;
 
-    protected static final String EXTRA_MESSAGE_REF = "messageref";
-
     /**
      * Interface for certain functionalities from MmsService
      */
     public static interface RequestManager {
-        /**
-         * Add a request to be executed by carrier app
-         *
-         * @param key The message ref key from carrier app
-         * @param request The request in pending
-         */
-        public void addCarrierAppRequest(int key, MmsRequest request);
-
         /**
          * Enqueue an MMS request
          *
@@ -90,39 +85,6 @@ public abstract class MmsRequest {
     protected MmsConfig.Overridden mMmsConfig;
     // MMS config overrides
     protected Bundle mMmsConfigOverrides;
-
-    // Intent result receiver for carrier app
-    protected final BroadcastReceiver mCarrierAppResultReceiver = new BroadcastReceiver() {
-        @Override
-        public void onReceive(Context context, Intent intent) {
-            final String action = intent.getAction();
-            if (action.equals(Telephony.Mms.Intents.MMS_SEND_ACTION) ||
-                    action.equals(Telephony.Mms.Intents.MMS_DOWNLOAD_ACTION)) {
-                Log.d(MmsService.TAG, "Carrier app result for " + action);
-                final int rc = getResultCode();
-                if (rc == Activity.RESULT_OK) {
-                    // Handled by carrier app, waiting for result
-                    Log.d(MmsService.TAG, "Sending/downloading MMS by IP pending.");
-                    final Bundle resultExtras = getResultExtras(false);
-                    if (resultExtras != null && resultExtras.containsKey(EXTRA_MESSAGE_REF)) {
-                        final int ref = resultExtras.getInt(EXTRA_MESSAGE_REF);
-                        Log.d(MmsService.TAG, "messageref = " + ref);
-                        mRequestManager.addCarrierAppRequest(ref, MmsRequest.this);
-                    } else {
-                        // Bad, no message ref provided
-                        Log.e(MmsService.TAG, "Can't find messageref in result extras.");
-                    }
-                } else {
-                    // No carrier app present, sending normally
-                    Log.d(MmsService.TAG, "Sending/downloading MMS by IP failed.");
-                    mRequestManager.addSimRequest(MmsRequest.this);
-                }
-            } else {
-                Log.e(MmsService.TAG, "unexpected BroadcastReceiver action: " + action);
-            }
-
-        }
-    };
 
     public MmsRequest(RequestManager requestManager, int subId, String creator,
             Bundle configOverrides) {
@@ -247,6 +209,37 @@ public abstract class MmsRequest {
     }
 
     /**
+     * Returns true if sending / downloading using the carrier app has failed and completes the
+     * action using platform API's, otherwise false.
+     */
+    protected boolean maybeFallbackToRegularDelivery(int carrierMessagingAppResult) {
+        if (carrierMessagingAppResult
+                == CarrierMessagingService.SEND_STATUS_RETRY_ON_CARRIER_NETWORK
+                || carrierMessagingAppResult
+                        == CarrierMessagingService.DOWNLOAD_STATUS_RETRY_ON_CARRIER_NETWORK) {
+            Log.d(MmsService.TAG, "Sending/downloading MMS by IP failed.");
+            mRequestManager.addSimRequest(MmsRequest.this);
+            return true;
+        } else {
+            return false;
+        }
+    }
+
+    /**
+     * Converts from {@code carrierMessagingAppResult} to a platform result code.
+     */
+    protected static int toSmsManagerResult(int carrierMessagingAppResult) {
+        switch (carrierMessagingAppResult) {
+            case CarrierMessagingService.SEND_STATUS_OK:
+                return Activity.RESULT_OK;
+            case CarrierMessagingService.SEND_STATUS_RETRY_ON_CARRIER_NETWORK:
+                return SmsManager.MMS_ERROR_RETRY;
+            default:
+                return SmsManager.MMS_ERROR_UNSPECIFIED;
+        }
+    }
+
+    /**
      * Making the HTTP request to MMSC
      *
      * @param context The context
@@ -300,4 +293,25 @@ public abstract class MmsRequest {
      * @param context The context
      */
     protected abstract void revokeUriPermission(Context context);
+
+    /**
+     * Base class for handling carrier app send / download result.
+     */
+    protected abstract class CarrierMmsActionCallback extends ICarrierMessagingCallback.Stub {
+        @Override
+        public void onSendSmsComplete(int result, int messageRef) {
+            Log.e(MmsService.TAG, "Unexpected onSendSmsComplete call with result: " + result);
+        }
+
+        @Override
+        public void onSendMultipartSmsComplete(int result, int[] messageRefs) {
+            Log.e(MmsService.TAG, "Unexpected onSendMultipartSmsComplete call with result: "
+                  + result);
+        }
+
+        @Override
+        public void onFilterComplete(boolean keepMessage) {
+            Log.e(MmsService.TAG, "Unexpected onFilterComplete call with result: " + keepMessage);
+        }
+    }
 }
