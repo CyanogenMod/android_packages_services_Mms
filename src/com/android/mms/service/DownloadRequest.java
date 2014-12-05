@@ -17,17 +17,20 @@
 package com.android.mms.service;
 
 import android.app.Activity;
+import android.app.ActivityManagerNative;
 import android.app.AppOpsManager;
 import android.app.PendingIntent;
 import android.content.ContentValues;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.UserInfo;
 import android.database.sqlite.SQLiteException;
 import android.net.Uri;
 import android.os.Binder;
 import android.os.Bundle;
 import android.os.RemoteException;
 import android.os.UserHandle;
+import android.os.UserManager;
 import android.provider.Telephony;
 import android.service.carrier.CarrierMessagingService;
 import android.service.carrier.ICarrierMessagingCallback;
@@ -38,6 +41,7 @@ import android.text.TextUtils;
 import android.util.Log;
 
 import com.android.mms.service.exception.MmsHttpException;
+
 import com.google.android.mms.MmsException;
 import com.google.android.mms.pdu.GenericPdu;
 import com.google.android.mms.pdu.PduHeaders;
@@ -98,6 +102,9 @@ public class DownloadRequest extends MmsRequest {
 
     @Override
     protected Uri persistIfRequired(Context context, int result, byte[] response) {
+        // Let any mms apps running as secondary user know that a new mms has been downloaded.
+        notifyOfDownload(context);
+
         if (!mRequestManager.getAutoPersistingPref()) {
             return null;
         }
@@ -173,6 +180,7 @@ public class DownloadRequest extends MmsRequest {
                             Integer.toString(PduHeaders.MESSAGE_TYPE_NOTIFICATION_IND),
                             mLocationUrl
                     });
+
             return messageUri;
         } catch (MmsException e) {
             Log.e(MmsService.TAG, "DownloadRequest.persistIfRequired: can not persist message", e);
@@ -184,6 +192,45 @@ public class DownloadRequest extends MmsRequest {
             Binder.restoreCallingIdentity(identity);
         }
         return null;
+    }
+
+    private void notifyOfDownload(Context context) {
+        final Intent intent = new Intent(Telephony.Sms.Intents.MMS_DOWNLOADED_ACTION);
+        intent.addFlags(Intent.FLAG_RECEIVER_NO_ABORT);
+
+        // Get a list of currently started users.
+        int[] users = null;
+        try {
+            users = ActivityManagerNative.getDefault().getRunningUserIds();
+        } catch (RemoteException re) {
+        }
+        if (users == null) {
+            users = new int[] {UserHandle.ALL.getIdentifier()};
+        }
+        final UserManager userManager =
+                (UserManager) context.getSystemService(Context.USER_SERVICE);
+
+        // Deliver the broadcast only to those running users that are permitted
+        // by user policy.
+        for (int i = users.length - 1; i >= 0; i--) {
+            UserHandle targetUser = new UserHandle(users[i]);
+            if (users[i] != UserHandle.USER_OWNER) {
+                // Is the user not allowed to use SMS?
+                if (userManager.hasUserRestriction(UserManager.DISALLOW_SMS, targetUser)) {
+                    continue;
+                }
+                // Skip unknown users and managed profiles as well
+                UserInfo info = userManager.getUserInfo(users[i]);
+                if (info == null || info.isManagedProfile()) {
+                    continue;
+                }
+            }
+            context.sendOrderedBroadcastAsUser(intent, targetUser,
+                    android.Manifest.permission.RECEIVE_MMS,
+                    AppOpsManager.OP_RECEIVE_MMS,
+                    null,
+                    null, Activity.RESULT_OK, null, null);
+        }
     }
 
     /**
