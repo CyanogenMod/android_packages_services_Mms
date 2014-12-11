@@ -155,7 +155,7 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
     }
 
     private int checkSubId(int subId) {
-        if (!SubscriptionManager.isValidSubId(subId)) {
+        if (!SubscriptionManager.isValidSubscriptionId(subId)) {
             throw new RuntimeException("Invalid subId " + subId);
         }
         if (subId == SubscriptionManager.DEFAULT_SUBSCRIPTION_ID) {
@@ -433,8 +433,8 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
         while (mPendingSimRequestQueue.size() > 0) {
             final MmsRequest request = mPendingSimRequestQueue.peek();
             if (request != null) {
-                if (mCurrentSubId == SubscriptionManager.INVALID_SUBSCRIPTION_ID ||
-                        mCurrentSubId == request.getSubId()) {
+                if (!SubscriptionManager.isValidSubscriptionId(mCurrentSubId)
+                        || mCurrentSubId == request.getSubId()) {
                     // First or subsequent requests with same SIM ID
                     mPendingSimRequestQueue.remove();
                     addToRunningRequestQueueSynchronized(request);
