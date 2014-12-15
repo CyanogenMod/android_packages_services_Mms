@@ -92,6 +92,10 @@ public class MmsConfig {
     // FLAG(ywen): the following two is not supported yet.
     public static final String CONFIG_ENABLE_MMS_READ_REPORTS = "enableMMSReadReports";
     public static final String CONFIG_ENABLE_MMS_DELIVERY_REPORTS = "enableMMSDeliveryReports";
+    // Bouygues Telecom (20820) MMSC does not support "charset" with "Content-Type" header
+    // It would fail and return 500. See b/18604507
+    // If this is false, then we don't add "charset" to "Content-Type"
+    public static final String CONFIG_SUPPORT_HTTP_CHARSET_HEADER = "supportHttpCharsetHeader";
     public static final String CONFIG_MAX_MESSAGE_SIZE = "maxMessageSize"; // in bytes
     public static final String CONFIG_MAX_IMAGE_HEIGHT = "maxImageHeight"; // in pixels
     public static final String CONFIG_MAX_IMAGE_WIDTH = "maxImageWidth"; // in pixels
@@ -154,6 +158,7 @@ public class MmsConfig {
         DEFAULTS.put(CONFIG_SEND_MULTIPART_SMS_AS_SEPARATE_MESSAGES, Boolean.valueOf(false));
         DEFAULTS.put(CONFIG_ENABLE_MMS_READ_REPORTS, Boolean.valueOf(false));
         DEFAULTS.put(CONFIG_ENABLE_MMS_DELIVERY_REPORTS, Boolean.valueOf(false));
+        DEFAULTS.put(CONFIG_SUPPORT_HTTP_CHARSET_HEADER, Boolean.valueOf(true));
         DEFAULTS.put(CONFIG_MAX_MESSAGE_SIZE, Integer.valueOf(300 * 1024));
         DEFAULTS.put(CONFIG_MAX_IMAGE_HEIGHT, Integer.valueOf(MAX_IMAGE_HEIGHT));
         DEFAULTS.put(CONFIG_MAX_IMAGE_WIDTH, Integer.valueOf(MAX_IMAGE_WIDTH));
@@ -489,6 +494,10 @@ public class MmsConfig {
 
         public boolean isMmsDeliveryReportsEnabled() {
             return getBoolean(CONFIG_ENABLE_MMS_DELIVERY_REPORTS);
+        }
+
+        public boolean getSupportHttpCharsetHeader() {
+            return getBoolean(CONFIG_SUPPORT_HTTP_CHARSET_HEADER);
         }
 
         /**

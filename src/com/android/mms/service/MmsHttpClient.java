@@ -62,8 +62,10 @@ public class MmsHttpClient {
     private static final String HEADER_VALUE_ACCEPT =
             "*/*, application/vnd.wap.mms-message, application/vnd.wap.sic";
     // The "Content-Type" header value
-    private static final String HEADER_VALUE_CONTENT_TYPE =
+    private static final String HEADER_VALUE_CONTENT_TYPE_WITH_CHARSET =
             "application/vnd.wap.mms-message; charset=utf-8";
+    private static final String HEADER_VALUE_CONTENT_TYPE_WITHOUT_CHARSET =
+            "application/vnd.wap.mms-message";
 
     private final Context mContext;
     private final SocketFactory mSocketFactory;
@@ -145,7 +147,13 @@ public class MmsHttpClient {
                 }
                 connection.setDoOutput(true);
                 connection.setRequestMethod(METHOD_POST);
-                connection.setRequestProperty(HEADER_CONTENT_TYPE, HEADER_VALUE_CONTENT_TYPE);
+                if (mmsConfig.getSupportHttpCharsetHeader()) {
+                    connection.setRequestProperty(HEADER_CONTENT_TYPE,
+                            HEADER_VALUE_CONTENT_TYPE_WITH_CHARSET);
+                } else {
+                    connection.setRequestProperty(HEADER_CONTENT_TYPE,
+                            HEADER_VALUE_CONTENT_TYPE_WITHOUT_CHARSET);
+                }
                 if (Log.isLoggable(MmsService.TAG, Log.VERBOSE)) {
                     logHttpHeaders(connection.getRequestProperties());
                 }
