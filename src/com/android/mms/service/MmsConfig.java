@@ -158,7 +158,7 @@ public class MmsConfig {
         DEFAULTS.put(CONFIG_SEND_MULTIPART_SMS_AS_SEPARATE_MESSAGES, Boolean.valueOf(false));
         DEFAULTS.put(CONFIG_ENABLE_MMS_READ_REPORTS, Boolean.valueOf(false));
         DEFAULTS.put(CONFIG_ENABLE_MMS_DELIVERY_REPORTS, Boolean.valueOf(false));
-        DEFAULTS.put(CONFIG_SUPPORT_HTTP_CHARSET_HEADER, Boolean.valueOf(true));
+        DEFAULTS.put(CONFIG_SUPPORT_HTTP_CHARSET_HEADER, Boolean.valueOf(false));
         DEFAULTS.put(CONFIG_MAX_MESSAGE_SIZE, Integer.valueOf(300 * 1024));
         DEFAULTS.put(CONFIG_MAX_IMAGE_HEIGHT, Integer.valueOf(MAX_IMAGE_HEIGHT));
         DEFAULTS.put(CONFIG_MAX_IMAGE_WIDTH, Integer.valueOf(MAX_IMAGE_WIDTH));
