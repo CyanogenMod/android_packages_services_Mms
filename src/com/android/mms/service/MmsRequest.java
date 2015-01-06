@@ -16,25 +16,22 @@
 
 package com.android.mms.service;
 
-import android.annotation.Nullable;
 import android.app.Activity;
 import android.app.PendingIntent;
-import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.net.Uri;
 import android.os.Bundle;
-import android.provider.Telephony;
+import android.provider.Settings;
 import android.service.carrier.CarrierMessagingService;
 import android.service.carrier.ICarrierMessagingCallback;
 import android.telephony.SmsManager;
+import android.telephony.TelephonyManager;
 import android.util.Log;
 
 import com.android.mms.service.exception.ApnException;
 import com.android.mms.service.exception.MmsHttpException;
 import com.android.mms.service.exception.MmsNetworkException;
-
-import java.util.List;
 
 /**
  * Base class for MMS requests. This has the common logic of sending/downloading MMS.
@@ -110,6 +107,21 @@ public abstract class MmsRequest {
         return mMmsConfig != null;
     }
 
+    private static boolean inAirplaneMode(final Context context) {
+        return Settings.System.getInt(context.getContentResolver(),
+                Settings.Global.AIRPLANE_MODE_ON, 0) != 0;
+    }
+
+    private static boolean isMobileDataEnabled(final Context context, final int subId) {
+        final TelephonyManager telephonyManager =
+                (TelephonyManager) context.getSystemService(Context.TELEPHONY_SERVICE);
+        return telephonyManager.getDataEnabled(subId);
+    }
+
+    private static boolean isDataNetworkAvailable(final Context context, final int subId) {
+        return !inAirplaneMode(context) && isMobileDataEnabled(context, subId);
+    }
+
     /**
      * Execute the request
      *
@@ -126,6 +138,9 @@ public abstract class MmsRequest {
         } else if (!prepareForHttpRequest()) { // Prepare request, like reading pdu data from user
             Log.e(MmsService.TAG, "MmsRequest: failed to prepare for request");
             result = SmsManager.MMS_ERROR_IO_ERROR;
+        } else if (!isDataNetworkAvailable(context, mSubId)) {
+            Log.e(MmsService.TAG, "MmsRequest: in airplane mode or mobile data disabled");
+            result = SmsManager.MMS_ERROR_NO_DATA_NETWORK;
         } else { // Execute
             long retryDelaySecs = 2;
             // Try multiple times of MMS HTTP request
@@ -140,9 +155,11 @@ public abstract class MmsRequest {
                         } catch (ApnException e) {
                             // If no APN could be found, fall back to trying without the APN name
                             if (apnName == null) {
-                                throw (e); // If the APN name was already null then throw the exception on
+                                // If the APN name was already null then don't need to retry
+                                throw (e);
                             }
-                            Log.i(MmsService.TAG, "MmsRequest: No match with APN name:" + apnName + ", try with no name");
+                            Log.i(MmsService.TAG, "MmsRequest: No match with APN name:"
+                                    + apnName + ", try with no name");
                             apn = ApnSettings.load(context, null, mSubId);
                         }
                         Log.i(MmsService.TAG, "MmsRequest: using " + apn.toString());

@@ -99,10 +99,6 @@ public class MmsNetworkManager implements HostResolver {
      * @throws com.android.mms.service.exception.MmsNetworkException if we fail to acquire it
      */
     public void acquireNetwork() throws MmsNetworkException {
-        if (inAirplaneMode()) {
-            // Fast fail airplane mode
-            throw new MmsNetworkException("In airplane mode");
-        }
         synchronized (this) {
             mMmsRequestCount += 1;
             if (mNetwork != null) {
@@ -237,11 +233,6 @@ public class MmsNetworkManager implements HostResolver {
                     Context.CONNECTIVITY_SERVICE);
         }
         return mConnectivityManager;
-    }
-
-    private boolean inAirplaneMode() {
-        return Settings.System.getInt(mContext.getContentResolver(),
-                Settings.Global.AIRPLANE_MODE_ON, 0) != 0;
     }
 
     private ConnectionPool getOrCreateConnectionPoolLocked() {
