@@ -94,7 +94,7 @@ public class MmsConfigManager {
 
         // Register for SubscriptionInfo list changes which is guaranteed
         // to invoke onSubscriptionsChanged the first time.
-        SubscriptionManager.from(mContext).registerOnSubscriptionsChangedListener(
+        SubscriptionManager.from(mContext).addOnSubscriptionsChangedListener(
                 mOnSubscriptionsChangedListener);
     }
 
