@@ -28,7 +28,6 @@ import android.util.Log;
 
 import com.android.mms.service.exception.MmsNetworkException;
 import com.android.okhttp.ConnectionPool;
-import com.android.okhttp.HostResolver;
 
 import java.net.InetAddress;
 import java.net.UnknownHostException;
@@ -36,7 +35,7 @@ import java.net.UnknownHostException;
 /**
  * Manages the MMS network connectivity
  */
-public class MmsNetworkManager implements HostResolver {
+public class MmsNetworkManager implements com.android.okhttp.internal.Network {
     // Timeout used to call ConnectivityManager.requestNetwork
     private static final int NETWORK_REQUEST_TIMEOUT_MILLIS = 60 * 1000;
     // Wait timeout for this class, a little bit longer than the above timeout
@@ -216,7 +215,7 @@ public class MmsNetworkManager implements HostResolver {
 
     private static final InetAddress[] EMPTY_ADDRESS_ARRAY = new InetAddress[0];
     @Override
-    public InetAddress[] getAllByName(String host) throws UnknownHostException {
+    public InetAddress[] resolveInetAddresses(String host) throws UnknownHostException {
         Network network = null;
         synchronized (this) {
             if (mNetwork == null) {

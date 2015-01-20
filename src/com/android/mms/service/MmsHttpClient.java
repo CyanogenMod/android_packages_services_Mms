@@ -22,10 +22,12 @@ import android.util.Log;
 
 import com.android.mms.service.exception.MmsHttpException;
 import com.android.okhttp.ConnectionPool;
-import com.android.okhttp.HostResolver;
 import com.android.okhttp.HttpHandler;
 import com.android.okhttp.HttpsHandler;
 import com.android.okhttp.OkHttpClient;
+import com.android.okhttp.OkUrlFactory;
+import com.android.okhttp.internal.Internal;
+import com.android.okhttp.internal.Network;
 
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
@@ -69,7 +71,7 @@ public class MmsHttpClient {
 
     private final Context mContext;
     private final SocketFactory mSocketFactory;
-    private final HostResolver mHostResolver;
+    private final Network mNetwork;
     private final ConnectionPool mConnectionPool;
 
     /**
@@ -77,14 +79,14 @@ public class MmsHttpClient {
      *
      * @param context The Context object
      * @param socketFactory The socket factory for creating an OKHttp client
-     * @param hostResolver The host name resolver for creating an OKHttp client
+     * @param network The Network for creating an OKHttp client
      * @param connectionPool The connection pool for creating an OKHttp client
      */
-    public MmsHttpClient(Context context, SocketFactory socketFactory, HostResolver hostResolver,
+    public MmsHttpClient(Context context, SocketFactory socketFactory, Network network,
             ConnectionPool connectionPool) {
         mContext = context;
         mSocketFactory = socketFactory;
-        mHostResolver = hostResolver;
+        mNetwork = network;
         mConnectionPool = connectionPool;
     }
 
@@ -213,7 +215,7 @@ public class MmsHttpClient {
      *
      * TODO: The following code is borrowed from android.net.Network.openConnection
      * Once that method supports proxy, we should use that instead
-     * Also we should remove the associated HostResolver and ConnectionPool from
+     * Also we should remove the associated Network and ConnectionPool from
      * MmsNetworkManager
      *
      * @param url The URL to connect to
@@ -223,18 +225,21 @@ public class MmsHttpClient {
      */
     private HttpURLConnection openConnection(URL url, Proxy proxy) throws MalformedURLException {
         final String protocol = url.getProtocol();
-        OkHttpClient okHttpClient;
+        OkUrlFactory okUrlFactory;
         if (protocol.equals("http")) {
-            okHttpClient = HttpHandler.createHttpOkHttpClient(proxy);
+            okUrlFactory = HttpHandler.createHttpOkUrlFactory(proxy);
         } else if (protocol.equals("https")) {
-            okHttpClient = HttpsHandler.createHttpsOkHttpClient(proxy);
+            okUrlFactory = HttpsHandler.createHttpsOkUrlFactory(proxy);
         } else {
             throw new MalformedURLException("Invalid URL or unrecognized protocol " + protocol);
         }
-        return okHttpClient.setSocketFactory(mSocketFactory)
-                .setHostResolver(mHostResolver)
-                .setConnectionPool(mConnectionPool)
-                .open(url);
+        OkHttpClient client = okUrlFactory.client();
+        client.setSocketFactory(mSocketFactory).setConnectionPool(mConnectionPool);
+
+        // Use internal APIs to change the Network.
+        Internal.instance.setNetwork(client, mNetwork);
+
+        return okUrlFactory.open(url);
     }
 
     private static void logHttpHeaders(Map<String, List<String>> headers) {
