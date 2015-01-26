@@ -20,36 +20,23 @@ import android.content.Context;
 import android.net.ConnectivityManager;
 import android.net.Network;
 import android.net.NetworkCapabilities;
-import android.net.NetworkRequest;
 import android.net.NetworkInfo;
+import android.net.NetworkRequest;
 import android.os.SystemClock;
-import android.provider.Settings;
 import android.util.Log;
 
 import com.android.mms.service.exception.MmsNetworkException;
-import com.android.okhttp.ConnectionPool;
-
-import java.net.InetAddress;
-import java.net.UnknownHostException;
 
 /**
  * Manages the MMS network connectivity
  */
-public class MmsNetworkManager implements com.android.okhttp.internal.Network {
+public class MmsNetworkManager {
     // Timeout used to call ConnectivityManager.requestNetwork
     private static final int NETWORK_REQUEST_TIMEOUT_MILLIS = 60 * 1000;
     // Wait timeout for this class, a little bit longer than the above timeout
     // to make sure we don't bail prematurely
     private static final int NETWORK_ACQUIRE_TIMEOUT_MILLIS =
             NETWORK_REQUEST_TIMEOUT_MILLIS + (5 * 1000);
-
-    // Borrowed from {@link android.net.Network}
-    private static final boolean httpKeepAlive =
-            Boolean.parseBoolean(System.getProperty("http.keepAlive", "true"));
-    private static final int httpMaxConnections =
-            httpKeepAlive ? Integer.parseInt(System.getProperty("http.maxConnections", "5")) : 0;
-    private static final long httpKeepAliveDurationMs =
-            Long.parseLong(System.getProperty("http.keepAliveDuration", "300000"));  // 5 minutes.
 
     private final Context mContext;
 
@@ -67,9 +54,6 @@ public class MmsNetworkManager implements com.android.okhttp.internal.Network {
 
     private volatile ConnectivityManager mConnectivityManager;
 
-    // The OkHttp's ConnectionPool used by the HTTP client associated with this network manager
-    private ConnectionPool mConnectionPool;
-
     // The MMS HTTP client for this network
     private MmsHttpClient mMmsHttpClient;
 
@@ -82,7 +66,6 @@ public class MmsNetworkManager implements com.android.okhttp.internal.Network {
         mNetwork = null;
         mMmsRequestCount = 0;
         mConnectivityManager = null;
-        mConnectionPool = null;
         mMmsHttpClient = null;
         mSubId = subId;
         mNetworkRequest = new NetworkRequest.Builder()
@@ -205,25 +188,7 @@ public class MmsNetworkManager implements com.android.okhttp.internal.Network {
         mNetworkCallback = null;
         mNetwork = null;
         mMmsRequestCount = 0;
-        // Currently we follow what android.net.Network does with ConnectionPool,
-        // which is per Network object. So if Network changes, we should clear
-        // out the ConnectionPool and thus the MmsHttpClient (since it is linked
-        // to a specific ConnectionPool).
-        mConnectionPool = null;
         mMmsHttpClient = null;
-    }
-
-    private static final InetAddress[] EMPTY_ADDRESS_ARRAY = new InetAddress[0];
-    @Override
-    public InetAddress[] resolveInetAddresses(String host) throws UnknownHostException {
-        Network network = null;
-        synchronized (this) {
-            if (mNetwork == null) {
-                return EMPTY_ADDRESS_ARRAY;
-            }
-            network = mNetwork;
-        }
-        return network.getAllByName(host);
     }
 
     private ConnectivityManager getConnectivityManager() {
@@ -232,13 +197,6 @@ public class MmsNetworkManager implements com.android.okhttp.internal.Network {
                     Context.CONNECTIVITY_SERVICE);
         }
         return mConnectivityManager;
-    }
-
-    private ConnectionPool getOrCreateConnectionPoolLocked() {
-        if (mConnectionPool == null) {
-            mConnectionPool = new ConnectionPool(httpMaxConnections, httpKeepAliveDurationMs);
-        }
-        return mConnectionPool;
     }
 
     /**
@@ -251,11 +209,7 @@ public class MmsNetworkManager implements com.android.okhttp.internal.Network {
             if (mMmsHttpClient == null) {
                 if (mNetwork != null) {
                     // Create new MmsHttpClient for the current Network
-                    mMmsHttpClient = new MmsHttpClient(
-                            mContext,
-                            mNetwork.getSocketFactory(),
-                            MmsNetworkManager.this,
-                            getOrCreateConnectionPoolLocked());
+                    mMmsHttpClient = new MmsHttpClient(mContext, mNetwork);
                 }
             }
             return mMmsHttpClient;

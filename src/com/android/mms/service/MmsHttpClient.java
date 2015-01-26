@@ -17,17 +17,11 @@
 package com.android.mms.service;
 
 import android.content.Context;
+import android.net.Network;
 import android.text.TextUtils;
 import android.util.Log;
 
 import com.android.mms.service.exception.MmsHttpException;
-import com.android.okhttp.ConnectionPool;
-import com.android.okhttp.HttpHandler;
-import com.android.okhttp.HttpsHandler;
-import com.android.okhttp.OkHttpClient;
-import com.android.okhttp.OkUrlFactory;
-import com.android.okhttp.internal.Internal;
-import com.android.okhttp.internal.Network;
 
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
@@ -46,7 +40,6 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import javax.net.SocketFactory;
 
 /**
  * MMS HTTP client for sending and downloading MMS messages
@@ -70,24 +63,17 @@ public class MmsHttpClient {
             "application/vnd.wap.mms-message";
 
     private final Context mContext;
-    private final SocketFactory mSocketFactory;
     private final Network mNetwork;
-    private final ConnectionPool mConnectionPool;
 
     /**
      * Constructor
      *
      * @param context The Context object
-     * @param socketFactory The socket factory for creating an OKHttp client
      * @param network The Network for creating an OKHttp client
-     * @param connectionPool The connection pool for creating an OKHttp client
      */
-    public MmsHttpClient(Context context, SocketFactory socketFactory, Network network,
-            ConnectionPool connectionPool) {
+    public MmsHttpClient(Context context, Network network) {
         mContext = context;
-        mSocketFactory = socketFactory;
         mNetwork = network;
-        mConnectionPool = connectionPool;
     }
 
     /**
@@ -119,7 +105,7 @@ public class MmsHttpClient {
             }
             final URL url = new URL(urlString);
             // Now get the connection
-            connection = openConnection(url, proxy);
+            connection = (HttpURLConnection) mNetwork.openConnection(url, proxy);
             connection.setDoInput(true);
             connection.setConnectTimeout(mmsConfig.getHttpSocketTimeout());
             // ------- COMMON HEADERS ---------
@@ -208,38 +194,6 @@ public class MmsHttpClient {
                 connection.disconnect();
             }
         }
-    }
-
-    /**
-     * Open an HTTP connection
-     *
-     * TODO: The following code is borrowed from android.net.Network.openConnection
-     * Once that method supports proxy, we should use that instead
-     * Also we should remove the associated Network and ConnectionPool from
-     * MmsNetworkManager
-     *
-     * @param url The URL to connect to
-     * @param proxy The proxy to use
-     * @return The opened HttpURLConnection
-     * @throws MalformedURLException If URL is malformed
-     */
-    private HttpURLConnection openConnection(URL url, Proxy proxy) throws MalformedURLException {
-        final String protocol = url.getProtocol();
-        OkUrlFactory okUrlFactory;
-        if (protocol.equals("http")) {
-            okUrlFactory = HttpHandler.createHttpOkUrlFactory(proxy);
-        } else if (protocol.equals("https")) {
-            okUrlFactory = HttpsHandler.createHttpsOkUrlFactory(proxy);
-        } else {
-            throw new MalformedURLException("Invalid URL or unrecognized protocol " + protocol);
-        }
-        OkHttpClient client = okUrlFactory.client();
-        client.setSocketFactory(mSocketFactory).setConnectionPool(mConnectionPool);
-
-        // Use internal APIs to change the Network.
-        Internal.instance.setNetwork(client, mNetwork);
-
-        return okUrlFactory.open(url);
     }
 
     private static void logHttpHeaders(Map<String, List<String>> headers) {
@@ -348,8 +302,6 @@ public class MmsHttpClient {
             final String macroValue = mmsConfig.getHttpParamMacro(context, macro);
             if (macroValue != null) {
                 replaced.append(macroValue);
-            } else {
-                Log.w(MmsService.TAG, "HTTP: invalid macro " + macro);
             }
             nextStart = matcher.end();
         }

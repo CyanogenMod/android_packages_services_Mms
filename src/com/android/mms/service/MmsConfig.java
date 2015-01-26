@@ -515,6 +515,7 @@ public class MmsConfig {
             } else if (MACRO_NAI.equals(macro)) {
                 return getNai(context, mBase.getSubId());
             }
+            Log.e(MmsService.TAG, "MmsConfig: invalid macro " + macro);
             return null;
         }
 
