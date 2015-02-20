@@ -105,7 +105,7 @@ public class MmsHttpClient {
     public byte[] execute(String urlString, byte[] pdu, String method, boolean isProxySet,
             String proxyHost, int proxyPort, MmsConfig.Overridden mmsConfig)
             throws MmsHttpException {
-        Log.d(MmsService.TAG, "HTTP: " + method + " " + urlString
+        Log.d(MmsService.TAG, "HTTP: " + method + " " + redactUrlForNonVerbose(urlString)
                 + (isProxySet ? (", proxy=" + proxyHost + ":" + proxyPort) : "")
                 + ", PDU size=" + (pdu != null ? pdu.length : 0));
         checkMethod(method);
@@ -193,11 +193,13 @@ public class MmsHttpClient {
                     + (responseBody != null ? responseBody.length : 0));
             return responseBody;
         } catch (MalformedURLException e) {
-            Log.e(MmsService.TAG, "HTTP: invalid URL " + urlString, e);
-            throw new MmsHttpException(0/*statusCode*/, "Invalid URL " + urlString, e);
+            final String redactedUrl = redactUrlForNonVerbose(urlString);
+            Log.e(MmsService.TAG, "HTTP: invalid URL " + redactedUrl, e);
+            throw new MmsHttpException(0/*statusCode*/, "Invalid URL " + redactedUrl, e);
         } catch (ProtocolException e) {
-            Log.e(MmsService.TAG, "HTTP: invalid URL protocol " + urlString, e);
-            throw new MmsHttpException(0/*statusCode*/, "Invalid URL protocol " + urlString, e);
+            final String redactedUrl = redactUrlForNonVerbose(urlString);
+            Log.e(MmsService.TAG, "HTTP: invalid URL protocol " + redactedUrl, e);
+            throw new MmsHttpException(0/*statusCode*/, "Invalid URL protocol " + redactedUrl, e);
         } catch (IOException e) {
             Log.e(MmsService.TAG, "HTTP: IO failure", e);
             throw new MmsHttpException(0/*statusCode*/, e);
@@ -379,5 +381,36 @@ public class MmsHttpClient {
                 }
             }
         }
+    }
+
+    /**
+     * Redact the URL for non-VERBOSE logging. Replace url with only the host part and the length
+     * of the input URL string.
+     *
+     * @param urlString
+     * @return
+     */
+    public static String redactUrlForNonVerbose(String urlString) {
+        if (Log.isLoggable(MmsService.TAG, Log.VERBOSE)) {
+            // Don't redact for VERBOSE level logging
+            return urlString;
+        }
+        if (TextUtils.isEmpty(urlString)) {
+            return urlString;
+        }
+        String protocol = "http";
+        String host = "";
+        try {
+            final URL url = new URL(urlString);
+            protocol = url.getProtocol();
+            host = url.getHost();
+        } catch (MalformedURLException e) {
+            // Ignore
+        }
+        // Print "http://host[length]"
+        final StringBuilder sb = new StringBuilder();
+        sb.append(protocol).append("://").append(host)
+                .append("[").append(urlString.length()).append("]");
+        return sb.toString();
     }
 }
