@@ -64,7 +64,6 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Queue;
 import java.util.concurrent.Callable;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -204,7 +203,7 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
         public void downloadMessage(int subId, String callingPkg, String locationUrl,
                 Uri contentUri, Bundle configOverrides,
                 PendingIntent downloadedIntent) throws RemoteException {
-            Log.d(TAG, "downloadMessage: " + locationUrl);
+            Log.d(TAG, "downloadMessage: " + MmsHttpClient.redactUrlForNonVerbose(locationUrl));
             enforceSystemUid();
             // Make sure the subId is correct
             subId = checkSubId(subId);
