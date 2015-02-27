@@ -107,21 +107,6 @@ public abstract class MmsRequest {
         return mMmsConfig != null;
     }
 
-    private static boolean inAirplaneMode(final Context context) {
-        return Settings.System.getInt(context.getContentResolver(),
-                Settings.Global.AIRPLANE_MODE_ON, 0) != 0;
-    }
-
-    private static boolean isMobileDataEnabled(final Context context, final int subId) {
-        final TelephonyManager telephonyManager =
-                (TelephonyManager) context.getSystemService(Context.TELEPHONY_SERVICE);
-        return telephonyManager.getDataEnabled(subId);
-    }
-
-    private static boolean isDataNetworkAvailable(final Context context, final int subId) {
-        return !inAirplaneMode(context) && isMobileDataEnabled(context, subId);
-    }
-
     /**
      * Execute the request
      *
@@ -132,15 +117,14 @@ public abstract class MmsRequest {
         int result = SmsManager.MMS_ERROR_UNSPECIFIED;
         int httpStatusCode = 0;
         byte[] response = null;
+        // TODO: add mms data channel check back to fast fail if no way to send mms,
+        // when telephony provides such API.
         if (!ensureMmsConfigLoaded()) { // Check mms config
             Log.e(MmsService.TAG, "MmsRequest: mms config is not loaded yet");
             result = SmsManager.MMS_ERROR_CONFIGURATION_ERROR;
         } else if (!prepareForHttpRequest()) { // Prepare request, like reading pdu data from user
             Log.e(MmsService.TAG, "MmsRequest: failed to prepare for request");
             result = SmsManager.MMS_ERROR_IO_ERROR;
-        } else if (!isDataNetworkAvailable(context, mSubId)) {
-            Log.e(MmsService.TAG, "MmsRequest: in airplane mode or mobile data disabled");
-            result = SmsManager.MMS_ERROR_NO_DATA_NETWORK;
         } else { // Execute
             long retryDelaySecs = 2;
             // Try multiple times of MMS HTTP request
