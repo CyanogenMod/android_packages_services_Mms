@@ -99,7 +99,7 @@ public class MmsHttpClient {
         checkMethod(method);
         HttpURLConnection connection = null;
         try {
-            Proxy proxy = null;
+            Proxy proxy = Proxy.NO_PROXY;
             if (isProxySet) {
                 proxy = new Proxy(Proxy.Type.HTTP, new InetSocketAddress(proxyHost, proxyPort));
             }
