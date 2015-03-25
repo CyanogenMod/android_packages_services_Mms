@@ -230,7 +230,9 @@ public class SendRequest extends MmsRequest {
 
     @Override
     protected void revokeUriPermission(Context context) {
-        context.revokeUriPermission(mPduUri, Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        if (mPduUri != null) {
+            context.revokeUriPermission(mPduUri, Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        }
     }
 
     /**

@@ -774,6 +774,9 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
      * @return pdu bytes if succeeded else null
      */
     public byte[] readPduFromContentUri(final Uri contentUri, final int maxSize) {
+        if (contentUri == null) {
+            return null;
+        }
         Callable<byte[]> copyPduToArray = new Callable<byte[]>() {
             public byte[] call() {
                 ParcelFileDescriptor.AutoCloseInputStream inStream = null;
@@ -810,8 +813,7 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
 
         Future<byte[]> pendingResult = mExecutor.submit(copyPduToArray);
         try {
-            byte[] pdu = pendingResult.get(TASK_TIMEOUT_MS, TimeUnit.MILLISECONDS);
-            return pdu;
+            return pendingResult.get(TASK_TIMEOUT_MS, TimeUnit.MILLISECONDS);
         } catch (Exception e) {
             // Typically a timeout occurred - cancel task
             pendingResult.cancel(true);
@@ -826,6 +828,9 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
      * @return true if all bytes successfully written else false
      */
     public boolean writePduToContentUri(final Uri contentUri, final byte[] pdu) {
+        if (contentUri == null || pdu == null) {
+            return false;
+        }
         Callable<Boolean> copyDownloadedPduToOutput = new Callable<Boolean>() {
             public Boolean call() {
                 ParcelFileDescriptor.AutoCloseOutputStream outStream = null;
@@ -850,8 +855,7 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
 
         Future<Boolean> pendingResult = mExecutor.submit(copyDownloadedPduToOutput);
         try {
-            Boolean succeeded = pendingResult.get(TASK_TIMEOUT_MS, TimeUnit.MILLISECONDS);
-            return succeeded == Boolean.TRUE;
+            return pendingResult.get(TASK_TIMEOUT_MS, TimeUnit.MILLISECONDS);
         } catch (Exception e) {
             // Typically a timeout occurred - cancel task
             pendingResult.cancel(true);

@@ -22,11 +22,9 @@ import android.content.Context;
 import android.content.Intent;
 import android.net.Uri;
 import android.os.Bundle;
-import android.provider.Settings;
 import android.service.carrier.CarrierMessagingService;
 import android.service.carrier.ICarrierMessagingCallback;
 import android.telephony.SmsManager;
-import android.telephony.TelephonyManager;
 import android.util.Log;
 
 import com.android.mms.service.exception.ApnException;
