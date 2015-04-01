@@ -29,11 +29,7 @@ import android.database.sqlite.SQLiteException;
 import android.net.Uri;
 import android.os.Binder;
 import android.os.Bundle;
-import android.os.Handler;
-import android.os.HandlerThread;
 import android.os.IBinder;
-import android.os.Looper;
-import android.os.Message;
 import android.os.ParcelFileDescriptor;
 import android.os.Process;
 import android.os.RemoteException;
@@ -88,6 +84,9 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
     // specific size limit should not be used (as it could be lower on some carriers).
     private static final int MAX_MMS_FILE_SIZE = 8 * 1024 * 1024;
 
+    // The default number of threads allowed to run MMS requests in each queue
+    public static final int THREAD_POOL_SIZE = 4;
+
     // Pending requests that are waiting for the SIM to be available
     // If a different SIM is currently used by previous requests, the following
     // requests will stay in this queue until that SIM finishes its current requests in
@@ -98,7 +97,8 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
     // TODO: persist this in case MmsService crashes
     private final Queue<MmsRequest> mPendingSimRequestQueue = new ArrayDeque<>();
 
-    private final ExecutorService mExecutor = Executors.newCachedThreadPool();
+    // Thread pool for transferring PDU with MMS apps
+    private final ExecutorService mPduTransferExecutor = Executors.newCachedThreadPool();
 
     // A cache of MmsNetworkManager for SIMs
     private final SparseArray<MmsNetworkManager> mNetworkManagerCache = new SparseArray<>();
@@ -108,33 +108,10 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
     // The current running MmsRequest count.
     private int mRunningRequestCount;
 
-    /**
-     * A thread-based request queue for executing the MMS requests in serial order
-     */
-    private class RequestQueue extends Handler {
-        public RequestQueue(Looper looper) {
-            super(looper);
-        }
-
-        @Override
-        public void handleMessage(Message msg) {
-            final MmsRequest request = (MmsRequest) msg.obj;
-            if (request != null) {
-                try {
-                    request.execute(MmsService.this, getNetworkManager(request.getSubId()));
-                } finally {
-                    synchronized (MmsService.this) {
-                        mRunningRequestCount--;
-                        if (mRunningRequestCount <= 0) {
-                            movePendingSimRequestsToRunningSynchronized();
-                        }
-                    }
-                }
-            } else {
-                Log.e(TAG, "RequestQueue: handling empty request");
-            }
-        }
-    }
+    // Running request queues, one thread pool per queue
+    // 0: send queue
+    // 1: download queue
+    private final ExecutorService[] mRunningRequestExecutors = new ExecutorService[2];
 
     private MmsNetworkManager getNetworkManager(int subId) {
         synchronized (mNetworkManagerCache) {
@@ -360,31 +337,6 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
         }
     };
 
-    // Running request queues, one thread per queue
-    // 0: send queue
-    // 1: download queue
-    private final RequestQueue[] mRunningRequestQueues = new RequestQueue[2];
-
-    /**
-     * Lazy start the request queue threads
-     *
-     * @param queueIndex index of the queue to start
-     */
-    private void startRequestQueueIfNeeded(int queueIndex) {
-        if (queueIndex < 0 || queueIndex >= mRunningRequestQueues.length) {
-            Log.e(TAG, "Start request queue if needed: invalid queue " + queueIndex);
-            return;
-        }
-        synchronized (this) {
-            if (mRunningRequestQueues[queueIndex] == null) {
-                final HandlerThread thread =
-                        new HandlerThread("MmsService RequestQueue " + queueIndex);
-                thread.start();
-                mRunningRequestQueues[queueIndex] = new RequestQueue(thread.getLooper());
-            }
-        }
-    }
-
     @Override
     public void addSimRequest(MmsRequest request) {
         if (request == null) {
@@ -413,17 +365,32 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
         }
     }
 
-    private void addToRunningRequestQueueSynchronized(MmsRequest request) {
+    private void addToRunningRequestQueueSynchronized(final MmsRequest request) {
         Log.d(TAG, "Add request to running queue for subId " + request.getSubId());
         // Update current state of running requests
-        mCurrentSubId = request.getSubId();
-        mRunningRequestCount++;
-        // Send to the corresponding request queue for execution
         final int queue = request.getQueueType();
-        startRequestQueueIfNeeded(queue);
-        final Message message = Message.obtain();
-        message.obj = request;
-        mRunningRequestQueues[queue].sendMessage(message);
+        if (queue < 0 || queue >= mRunningRequestExecutors.length) {
+            Log.e(TAG, "Invalid request queue index for running request");
+            return;
+        }
+        mRunningRequestCount++;
+        mCurrentSubId = request.getSubId();
+        // Send to the corresponding request queue for execution
+        mRunningRequestExecutors[queue].execute(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    request.execute(MmsService.this, getNetworkManager(request.getSubId()));
+                } finally {
+                    synchronized (MmsService.this) {
+                        mRunningRequestCount--;
+                        if (mRunningRequestCount <= 0) {
+                            movePendingSimRequestsToRunningSynchronized();
+                        }
+                    }
+                }
+            }
+        });
     }
 
     private void movePendingSimRequestsToRunningSynchronized() {
@@ -464,9 +431,21 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
         // Load mms_config
         MmsConfigManager.getInstance().init(this);
         // Initialize running request state
+        for (int i = 0; i < mRunningRequestExecutors.length; i++) {
+            mRunningRequestExecutors[i] = Executors.newFixedThreadPool(THREAD_POOL_SIZE);
+        }
         synchronized (this) {
             mCurrentSubId = SubscriptionManager.INVALID_SUBSCRIPTION_ID;
             mRunningRequestCount = 0;
+        }
+    }
+
+    @Override
+    public void onDestroy() {
+        super.onDestroy();
+        Log.d(TAG, "onDestroy");
+        for (ExecutorService executor : mRunningRequestExecutors) {
+            executor.shutdown();
         }
     }
 
@@ -811,7 +790,7 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
             }
         };
 
-        Future<byte[]> pendingResult = mExecutor.submit(copyPduToArray);
+        Future<byte[]> pendingResult = mPduTransferExecutor.submit(copyPduToArray);
         try {
             return pendingResult.get(TASK_TIMEOUT_MS, TimeUnit.MILLISECONDS);
         } catch (Exception e) {
@@ -853,7 +832,7 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
             }
         };
 
-        Future<Boolean> pendingResult = mExecutor.submit(copyDownloadedPduToOutput);
+        Future<Boolean> pendingResult = mPduTransferExecutor.submit(copyDownloadedPduToOutput);
         try {
             return pendingResult.get(TASK_TIMEOUT_MS, TimeUnit.MILLISECONDS);
         } catch (Exception e) {
