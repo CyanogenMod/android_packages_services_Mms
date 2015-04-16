@@ -53,7 +53,7 @@ public class ApnSettings {
             Telephony.Carriers.MMSPORT,
             Telephony.Carriers.NAME,
             Telephony.Carriers.APN,
-            Telephony.Carriers.BEARER,
+            Telephony.Carriers.BEARER_BITMASK,
             Telephony.Carriers.PROTOCOL,
             Telephony.Carriers.ROAMING_PROTOCOL,
             Telephony.Carriers.AUTH_TYPE,
