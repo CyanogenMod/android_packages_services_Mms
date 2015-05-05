@@ -161,8 +161,16 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
                         throws RemoteException {
             Log.d(TAG, "sendMessage");
             enforceSystemUid();
+
             // Make sure the subId is correct
             subId = checkSubId(subId);
+
+            // Make sure the subId is active
+            if (!isActiveSubId(subId)) {
+                sendErrorInPendingIntent(sentIntent);
+                return;
+            }
+
             final SendRequest request = new SendRequest(MmsService.this, subId, contentUri,
                     locationUrl, sentIntent, callingPkg, configOverrides);
 
@@ -182,8 +190,16 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
                 PendingIntent downloadedIntent) throws RemoteException {
             Log.d(TAG, "downloadMessage: " + MmsHttpClient.redactUrlForNonVerbose(locationUrl));
             enforceSystemUid();
+
             // Make sure the subId is correct
             subId = checkSubId(subId);
+
+            // Make sure the subId is active
+            if (!isActiveSubId(subId)) {
+                sendErrorInPendingIntent(downloadedIntent);
+                return;
+            }
+
             final DownloadRequest request = new DownloadRequest(MmsService.this, subId,
                     locationUrl, contentUri, downloadedIntent, callingPkg, configOverrides);
             final String carrierMessagingServicePackage =
@@ -334,6 +350,25 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
         public boolean getAutoPersisting() throws RemoteException {
             Log.d(TAG, "getAutoPersisting");
             return getAutoPersistingPref();
+        }
+
+        /*
+         * @return true if the subId is active.
+         */
+        private boolean isActiveSubId(int subId) {
+            return SubscriptionManager.from(MmsService.this).isActiveSubId(subId);
+        }
+
+        /*
+         * Calls the pending intent with <code>MMS_ERROR_NO_DATA_NETWORK</code>.
+         */
+        private void sendErrorInPendingIntent(@Nullable PendingIntent intent) {
+            if (intent != null) {
+                try {
+                    intent.send(SmsManager.MMS_ERROR_NO_DATA_NETWORK);
+                } catch (PendingIntent.CanceledException ex) {
+                }
+            }
         }
     };
 
