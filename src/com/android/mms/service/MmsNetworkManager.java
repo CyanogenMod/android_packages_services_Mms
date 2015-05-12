@@ -60,6 +60,41 @@ public class MmsNetworkManager {
     // The SIM ID which we use to connect
     private final int mSubId;
 
+    /**
+     * Network callback for our network request
+     */
+    private class NetworkRequestCallback extends ConnectivityManager.NetworkCallback {
+        @Override
+        public void onAvailable(Network network) {
+            super.onAvailable(network);
+            Log.d(MmsService.TAG, "NetworkCallbackListener.onAvailable: network=" + network);
+            synchronized (MmsNetworkManager.this) {
+                mNetwork = network;
+                MmsNetworkManager.this.notifyAll();
+            }
+        }
+
+        @Override
+        public void onLost(Network network) {
+            super.onLost(network);
+            Log.d(MmsService.TAG, "NetworkCallbackListener.onLost: network=" + network);
+            synchronized (MmsNetworkManager.this) {
+                releaseRequestLocked(this);
+                MmsNetworkManager.this.notifyAll();
+            }
+        }
+
+        @Override
+        public void onUnavailable() {
+            super.onUnavailable();
+            Log.d(MmsService.TAG, "NetworkCallbackListener.onUnavailable");
+            synchronized (MmsNetworkManager.this) {
+                releaseRequestLocked(this);
+                MmsNetworkManager.this.notifyAll();
+            }
+        }
+    }
+
     public MmsNetworkManager(Context context, int subId) {
         mContext = context;
         mNetworkCallback = null;
@@ -88,9 +123,11 @@ public class MmsNetworkManager {
                 Log.d(MmsService.TAG, "MmsNetworkManager: already available");
                 return;
             }
-            Log.d(MmsService.TAG, "MmsNetworkManager: start new network request");
-            // Not available, so start a new request
-            newRequest();
+            // Not available, so start a new request if not done yet
+            if (mNetworkCallback == null) {
+                Log.d(MmsService.TAG, "MmsNetworkManager: start new network request");
+                startNewNetworkRequestLocked();
+            }
             final long shouldEnd = SystemClock.elapsedRealtime() + NETWORK_ACQUIRE_TIMEOUT_MILLIS;
             long waitTime = NETWORK_ACQUIRE_TIMEOUT_MILLIS;
             while (waitTime > 0) {
@@ -131,39 +168,9 @@ public class MmsNetworkManager {
     /**
      * Start a new {@link android.net.NetworkRequest} for MMS
      */
-    private void newRequest() {
+    private void startNewNetworkRequestLocked() {
         final ConnectivityManager connectivityManager = getConnectivityManager();
-        mNetworkCallback = new ConnectivityManager.NetworkCallback() {
-            @Override
-            public void onAvailable(Network network) {
-                super.onAvailable(network);
-                Log.d(MmsService.TAG, "NetworkCallbackListener.onAvailable: network=" + network);
-                synchronized (MmsNetworkManager.this) {
-                    mNetwork = network;
-                    MmsNetworkManager.this.notifyAll();
-                }
-            }
-
-            @Override
-            public void onLost(Network network) {
-                super.onLost(network);
-                Log.d(MmsService.TAG, "NetworkCallbackListener.onLost: network=" + network);
-                synchronized (MmsNetworkManager.this) {
-                    releaseRequestLocked(this);
-                    MmsNetworkManager.this.notifyAll();
-                }
-            }
-
-            @Override
-            public void onUnavailable() {
-                super.onUnavailable();
-                Log.d(MmsService.TAG, "NetworkCallbackListener.onUnavailable");
-                synchronized (MmsNetworkManager.this) {
-                    releaseRequestLocked(this);
-                    MmsNetworkManager.this.notifyAll();
-                }
-            }
-        };
+        mNetworkCallback = new NetworkRequestCallback();
         connectivityManager.requestNetwork(
                 mNetworkRequest, mNetworkCallback, NETWORK_REQUEST_TIMEOUT_MILLIS);
     }
