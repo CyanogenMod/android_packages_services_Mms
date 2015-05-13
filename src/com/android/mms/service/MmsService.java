@@ -194,11 +194,10 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
             // Make sure the subId is correct
             subId = checkSubId(subId);
 
-            // Make sure the subId is active
-            if (!isActiveSubId(subId)) {
-                sendErrorInPendingIntent(downloadedIntent);
-                return;
-            }
+            // If the subId is no longer active it could be caused by
+            // an MVNO using multiple subIds, so we should try to
+            // download anyway.
+            // TODO: Fail fast when downloading will fail (i.e. SIM swapped)
 
             final DownloadRequest request = new DownloadRequest(MmsService.this, subId,
                     locationUrl, contentUri, downloadedIntent, callingPkg, configOverrides);
