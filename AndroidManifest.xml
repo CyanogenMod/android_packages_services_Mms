@@ -30,7 +30,8 @@
     <uses-permission android:name="android.permission.INTERACT_ACROSS_USERS"/>
 
     <application android:label="MmsService"
-                 android:process="com.android.phone">
+                 android:process="com.android.phone"
+                 android:usesCleartextTraffic="true">
 
         <service android:name=".MmsService"
                  android:enabled="true"
