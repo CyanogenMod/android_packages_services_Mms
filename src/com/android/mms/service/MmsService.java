@@ -172,7 +172,7 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
             }
 
             final SendRequest request = new SendRequest(MmsService.this, subId, contentUri,
-                    locationUrl, sentIntent, callingPkg, configOverrides);
+                    locationUrl, sentIntent, callingPkg, configOverrides, MmsService.this);
 
             final String carrierMessagingServicePackage =
                     getCarrierMessagingServicePackageIfExists();
@@ -199,8 +199,8 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
             // download anyway.
             // TODO: Fail fast when downloading will fail (i.e. SIM swapped)
 
-            final DownloadRequest request = new DownloadRequest(MmsService.this, subId,
-                    locationUrl, contentUri, downloadedIntent, callingPkg, configOverrides);
+            final DownloadRequest request = new DownloadRequest(MmsService.this, subId, locationUrl,
+                    contentUri, downloadedIntent, callingPkg, configOverrides, MmsService.this);
             final String carrierMessagingServicePackage =
                     getCarrierMessagingServicePackageIfExists();
             if (carrierMessagingServicePackage != null) {
@@ -215,11 +215,11 @@ public class MmsService extends Service implements MmsRequest.RequestManager {
             Log.d(TAG, "getCarrierConfigValues");
             // Make sure the subId is correct
             subId = checkSubId(subId);
-            final MmsConfig mmsConfig = MmsConfigManager.getInstance().getMmsConfigBySubId(subId);
+            final Bundle mmsConfig = MmsConfigManager.getInstance().getMmsConfigBySubId(subId);
             if (mmsConfig == null) {
                 return new Bundle();
             }
-            return mmsConfig.getCarrierConfigValues();
+            return mmsConfig;
         }
 
         @Override

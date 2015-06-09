@@ -25,6 +25,8 @@ import android.os.Bundle;
 import android.service.carrier.CarrierMessagingService;
 import android.service.carrier.ICarrierMessagingCallback;
 import android.telephony.SmsManager;
+import android.telephony.TelephonyManager;
+import android.text.TextUtils;
 import android.util.Log;
 
 import com.android.mms.service.exception.ApnException;
@@ -77,17 +79,20 @@ public abstract class MmsRequest {
     // The creator app
     protected String mCreator;
     // MMS config
-    protected MmsConfig.Overridden mMmsConfig;
-    // MMS config overrides
+    protected Bundle mMmsConfig;
+    // MMS config overrides that will be applied to mMmsConfig when we eventually load it.
     protected Bundle mMmsConfigOverrides;
+    // Context used to get TelephonyManager.
+    protected Context mContext;
 
     public MmsRequest(RequestManager requestManager, int subId, String creator,
-            Bundle configOverrides) {
+            Bundle configOverrides, Context context) {
         mRequestManager = requestManager;
         mSubId = subId;
         mCreator = creator;
         mMmsConfigOverrides = configOverrides;
         mMmsConfig = null;
+        mContext = context;
     }
 
     public int getSubId() {
@@ -97,9 +102,25 @@ public abstract class MmsRequest {
     private boolean ensureMmsConfigLoaded() {
         if (mMmsConfig == null) {
             // Not yet retrieved from mms config manager. Try getting it.
-            final MmsConfig config = MmsConfigManager.getInstance().getMmsConfigBySubId(mSubId);
+            final Bundle config = MmsConfigManager.getInstance().getMmsConfigBySubId(mSubId);
             if (config != null) {
-                mMmsConfig = new MmsConfig.Overridden(config, mMmsConfigOverrides);
+                mMmsConfig = config;
+                // TODO: Make MmsConfigManager authoritative for user agent and don't consult
+                // TelephonyManager.
+                TelephonyManager telephonyManager =
+                        (TelephonyManager) mContext.getSystemService(Context.TELEPHONY_SERVICE);
+                String userAgent = telephonyManager.getMmsUserAgent();
+                if (!TextUtils.isEmpty(userAgent)) {
+                    config.putString(SmsManager.MMS_CONFIG_USER_AGENT, userAgent);
+                }
+                String userAgentProfileUrl = telephonyManager.getMmsUAProfUrl();
+                if (!TextUtils.isEmpty(userAgentProfileUrl)) {
+                    config.putString(SmsManager.MMS_CONFIG_UA_PROF_URL, userAgentProfileUrl);
+                }
+                // Apply overrides
+                if (mMmsConfigOverrides != null) {
+                    mMmsConfig.putAll(mMmsConfigOverrides);
+                }
             }
         }
         return mMmsConfig != null;

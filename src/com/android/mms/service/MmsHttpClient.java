@@ -18,7 +18,12 @@ package com.android.mms.service;
 
 import android.content.Context;
 import android.net.Network;
+import android.os.Bundle;
+import android.telephony.SmsManager;
+import android.telephony.SubscriptionManager;
+import android.telephony.TelephonyManager;
 import android.text.TextUtils;
+import android.util.Base64;
 import android.util.Log;
 
 import com.android.mms.service.exception.MmsHttpException;
@@ -29,6 +34,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.io.UnsupportedEncodingException;
 import java.net.HttpURLConnection;
 import java.net.InetSocketAddress;
 import java.net.MalformedURLException;
@@ -87,11 +93,12 @@ public class MmsHttpClient {
      * @param proxyHost The proxy host
      * @param proxyPort The proxy port
      * @param mmsConfig The MMS config to use
+     * @param subId The subscription ID used to get line number, etc.
      * @return The HTTP response body
      * @throws MmsHttpException For any failures
      */
     public byte[] execute(String urlString, byte[] pdu, String method, boolean isProxySet,
-            String proxyHost, int proxyPort, MmsConfig.Overridden mmsConfig)
+            String proxyHost, int proxyPort, Bundle mmsConfig, int subId)
             throws MmsHttpException {
         Log.d(MmsService.TAG, "HTTP: " + method + " " + redactUrlForNonVerbose(urlString)
                 + (isProxySet ? (", proxy=" + proxyHost + ":" + proxyPort) : "")
@@ -107,7 +114,8 @@ public class MmsHttpClient {
             // Now get the connection
             connection = (HttpURLConnection) mNetwork.openConnection(url, proxy);
             connection.setDoInput(true);
-            connection.setConnectTimeout(mmsConfig.getHttpSocketTimeout());
+            connection.setConnectTimeout(
+                    mmsConfig.getInt(SmsManager.MMS_CONFIG_HTTP_SOCKET_TIMEOUT));
             // ------- COMMON HEADERS ---------
             // Header: Accept
             connection.setRequestProperty(HEADER_ACCEPT, HEADER_VALUE_ACCEPT);
@@ -115,18 +123,19 @@ public class MmsHttpClient {
             connection.setRequestProperty(
                     HEADER_ACCEPT_LANGUAGE, getCurrentAcceptLanguage(Locale.getDefault()));
             // Header: User-Agent
-            final String userAgent = mmsConfig.getUserAgent();
+            final String userAgent = mmsConfig.getString(SmsManager.MMS_CONFIG_USER_AGENT);
             Log.i(MmsService.TAG, "HTTP: User-Agent=" + userAgent);
             connection.setRequestProperty(HEADER_USER_AGENT, userAgent);
             // Header: x-wap-profile
-            final String uaProfUrlTagName = mmsConfig.getUaProfTagName();
-            final String uaProfUrl = mmsConfig.getUaProfUrl();
+            final String uaProfUrlTagName =
+                    mmsConfig.getString(SmsManager.MMS_CONFIG_UA_PROF_TAG_NAME);
+            final String uaProfUrl = mmsConfig.getString(SmsManager.MMS_CONFIG_UA_PROF_URL);
             if (uaProfUrl != null) {
                 Log.i(MmsService.TAG, "HTTP: UaProfUrl=" + uaProfUrl);
                 connection.setRequestProperty(uaProfUrlTagName, uaProfUrl);
             }
             // Add extra headers specified by mms_config.xml's httpparams
-            addExtraHeaders(connection, mmsConfig);
+            addExtraHeaders(connection, mmsConfig, subId);
             // Different stuff for GET and POST
             if (METHOD_POST.equals(method)) {
                 if (pdu == null || pdu.length < 1) {
@@ -135,7 +144,7 @@ public class MmsHttpClient {
                 }
                 connection.setDoOutput(true);
                 connection.setRequestMethod(METHOD_POST);
-                if (mmsConfig.getSupportHttpCharsetHeader()) {
+                if (mmsConfig.getBoolean(SmsManager.MMS_CONFIG_SUPPORT_HTTP_CHARSET_HEADER)) {
                     connection.setRequestProperty(HEADER_CONTENT_TYPE,
                             HEADER_VALUE_CONTENT_TYPE_WITH_CHARSET);
                 } else {
@@ -276,16 +285,45 @@ public class MmsHttpClient {
         }
     }
 
+    /**
+     * Add extra HTTP headers from mms_config.xml's httpParams, which is a list of key/value
+     * pairs separated by "|". Each key/value pair is separated by ":". Value may contain
+     * macros like "##LINE1##" or "##NAI##" which is resolved with methods in this class
+     *
+     * @param connection The HttpURLConnection that we add headers to
+     * @param mmsConfig The MmsConfig object
+     * @param subId The subscription ID used to get line number, etc.
+     */
+    private void addExtraHeaders(HttpURLConnection connection, Bundle mmsConfig, int subId) {
+        final String extraHttpParams = mmsConfig.getString(SmsManager.MMS_CONFIG_HTTP_PARAMS);
+        if (!TextUtils.isEmpty(extraHttpParams)) {
+            // Parse the parameter list
+            String paramList[] = extraHttpParams.split("\\|");
+            for (String paramPair : paramList) {
+                String splitPair[] = paramPair.split(":", 2);
+                if (splitPair.length == 2) {
+                    final String name = splitPair[0].trim();
+                    final String value =
+                            resolveMacro(mContext, splitPair[1].trim(), mmsConfig, subId);
+                    if (!TextUtils.isEmpty(name) && !TextUtils.isEmpty(value)) {
+                        // Add the header if the param is valid
+                        connection.setRequestProperty(name, value);
+                    }
+                }
+            }
+        }
+    }
+
     private static final Pattern MACRO_P = Pattern.compile("##(\\S+)##");
     /**
      * Resolve the macro in HTTP param value text
      * For example, "something##LINE1##something" is resolved to "something9139531419something"
      *
      * @param value The HTTP param value possibly containing macros
-     * @return The HTTP param with macro resolved to real value
+     * @param subId The subscription ID used to get line number, etc.
+     * @return The HTTP param with macros resolved to real value
      */
-    private static String resolveMacro(Context context, String value,
-            MmsConfig.Overridden mmsConfig) {
+    private static String resolveMacro(Context context, String value, Bundle mmsConfig, int subId) {
         if (TextUtils.isEmpty(value)) {
             return value;
         }
@@ -301,7 +339,7 @@ public class MmsHttpClient {
                 replaced.append(value.substring(nextStart, matchedStart));
             }
             final String macro = matcher.group(1);
-            final String macroValue = mmsConfig.getHttpParamMacro(context, macro);
+            final String macroValue = getMacroValue(context, macro, mmsConfig, subId);
             if (macroValue != null) {
                 replaced.append(macroValue);
             }
@@ -311,33 +349,6 @@ public class MmsHttpClient {
             replaced.append(value.substring(nextStart));
         }
         return replaced == null ? value : replaced.toString();
-    }
-
-    /**
-     * Add extra HTTP headers from mms_config.xml's httpParams, which is a list of key/value
-     * pairs separated by "|". Each key/value pair is separated by ":". Value may contain
-     * macros like "##LINE1##" or "##NAI##" which is resolved with methods in this class
-     *
-     * @param connection The HttpURLConnection that we add headers to
-     * @param mmsConfig The MmsConfig object
-     */
-    private void addExtraHeaders(HttpURLConnection connection, MmsConfig.Overridden mmsConfig) {
-        final String extraHttpParams = mmsConfig.getHttpParams();
-        if (!TextUtils.isEmpty(extraHttpParams)) {
-            // Parse the parameter list
-            String paramList[] = extraHttpParams.split("\\|");
-            for (String paramPair : paramList) {
-                String splitPair[] = paramPair.split(":", 2);
-                if (splitPair.length == 2) {
-                    final String name = splitPair[0].trim();
-                    final String value = resolveMacro(mContext, splitPair[1].trim(), mmsConfig);
-                    if (!TextUtils.isEmpty(name) && !TextUtils.isEmpty(value)) {
-                        // Add the header if the param is valid
-                        connection.setRequestProperty(name, value);
-                    }
-                }
-            }
-        }
     }
 
     /**
@@ -369,5 +380,89 @@ public class MmsHttpClient {
         sb.append(protocol).append("://").append(host)
                 .append("[").append(urlString.length()).append("]");
         return sb.toString();
+    }
+
+    /*
+     * Macro names
+     */
+    // The raw phone number from TelephonyManager.getLine1Number
+    private static final String MACRO_LINE1 = "LINE1";
+    // The phone number without country code
+    private static final String MACRO_LINE1NOCOUNTRYCODE = "LINE1NOCOUNTRYCODE";
+    // NAI (Network Access Identifier), used by Sprint for authentication
+    private static final String MACRO_NAI = "NAI";
+    /**
+     * Return the HTTP param macro value.
+     * Example: "LINE1" returns the phone number, etc.
+     *
+     * @param macro The macro name
+     * @param mmsConfig The MMS config which contains NAI suffix.
+     * @param subId The subscription ID used to get line number, etc.
+     * @return The value of the defined macro
+     */
+    private static String getMacroValue(Context context, String macro, Bundle mmsConfig,
+            int subId) {
+        if (MACRO_LINE1.equals(macro)) {
+            return getLine1(context, subId);
+        } else if (MACRO_LINE1NOCOUNTRYCODE.equals(macro)) {
+            return getLine1NoCountryCode(context, subId);
+        } else if (MACRO_NAI.equals(macro)) {
+            return getNai(context, mmsConfig, subId);
+        }
+        Log.e(MmsService.TAG, "invalid macro " + macro);
+        return null;
+    }
+
+    /**
+     * Returns the phone number for the given subscription ID.
+     */
+    private static String getLine1(Context context, int subId) {
+        final TelephonyManager telephonyManager = (TelephonyManager) context.getSystemService(
+                Context.TELEPHONY_SERVICE);
+        return telephonyManager.getLine1NumberForSubscriber(subId);
+    }
+
+    /**
+     * Returns the phone number (without country code) for the given subscription ID.
+     */
+    private static String getLine1NoCountryCode(Context context, int subId) {
+        final TelephonyManager telephonyManager = (TelephonyManager) context.getSystemService(
+                Context.TELEPHONY_SERVICE);
+        return PhoneUtils.getNationalNumber(
+                telephonyManager,
+                subId,
+                telephonyManager.getLine1NumberForSubscriber(subId));
+    }
+
+    /**
+     * Returns the NAI (Network Access Identifier) from SystemProperties for the given subscription
+     * ID.
+     */
+    private static String getNai(Context context, Bundle mmsConfig, int subId) {
+        final TelephonyManager telephonyManager = (TelephonyManager) context.getSystemService(
+                Context.TELEPHONY_SERVICE);
+        String nai = telephonyManager.getNai(SubscriptionManager.getSlotId(subId));
+        if (Log.isLoggable(MmsService.TAG, Log.VERBOSE)) {
+            Log.v(MmsService.TAG, "getNai: nai=" + nai);
+        }
+
+        if (!TextUtils.isEmpty(nai)) {
+            String naiSuffix = mmsConfig.getString(SmsManager.MMS_CONFIG_NAI_SUFFIX);
+            if (!TextUtils.isEmpty(naiSuffix)) {
+                nai = nai + naiSuffix;
+            }
+            byte[] encoded = null;
+            try {
+                encoded = Base64.encode(nai.getBytes("UTF-8"), Base64.NO_WRAP);
+            } catch (UnsupportedEncodingException e) {
+                encoded = Base64.encode(nai.getBytes(), Base64.NO_WRAP);
+            }
+            try {
+                nai = new String(encoded, "UTF-8");
+            } catch (UnsupportedEncodingException e) {
+                nai = new String(encoded);
+            }
+        }
+        return nai;
     }
 }

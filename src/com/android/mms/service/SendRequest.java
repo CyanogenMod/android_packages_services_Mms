@@ -60,8 +60,8 @@ public class SendRequest extends MmsRequest {
     private final PendingIntent mSentIntent;
 
     public SendRequest(RequestManager manager, int subId, Uri contentUri, String locationUrl,
-            PendingIntent sentIntent, String creator, Bundle configOverrides) {
-        super(manager, subId, creator, configOverrides);
+            PendingIntent sentIntent, String creator, Bundle configOverrides, Context context) {
+        super(manager, subId, creator, configOverrides, context);
         mPduUri = contentUri;
         mPduData = null;
         mLocationUrl = locationUrl;
@@ -83,7 +83,8 @@ public class SendRequest extends MmsRequest {
                 apn.isProxySet(),
                 apn.getProxyAddress(),
                 apn.getProxyPort(),
-                mMmsConfig);
+                mMmsConfig,
+                mSubId);
     }
 
     @Override
@@ -109,7 +110,8 @@ public class SendRequest extends MmsRequest {
         }
         final long identity = Binder.clearCallingIdentity();
         try {
-            final boolean supportContentDisposition = mMmsConfig.getSupportMmsContentDisposition();
+            final boolean supportContentDisposition =
+                    mMmsConfig.getBoolean(SmsManager.MMS_CONFIG_SUPPORT_MMS_CONTENT_DISPOSITION);
             // Persist the request PDU first
             GenericPdu pdu = (new PduParser(mPduData, supportContentDisposition)).parse();
             if (pdu == null) {
@@ -185,7 +187,7 @@ public class SendRequest extends MmsRequest {
         if (mPduData != null) {
             return true;
         }
-        final int bytesTobeRead = mMmsConfig.getMaxMessageSize();
+        final int bytesTobeRead = mMmsConfig.getInt(SmsManager.MMS_CONFIG_MAX_MESSAGE_SIZE);
         mPduData = mRequestManager.readPduFromContentUri(mPduUri, bytesTobeRead);
         return (mPduData != null);
     }

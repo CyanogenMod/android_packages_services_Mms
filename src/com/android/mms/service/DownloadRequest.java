@@ -36,6 +36,7 @@ import android.service.carrier.CarrierMessagingService;
 import android.service.carrier.ICarrierMessagingCallback;
 import android.service.carrier.ICarrierMessagingService;
 import android.telephony.CarrierMessagingServiceManager;
+import android.telephony.SmsManager;
 import android.telephony.TelephonyManager;
 import android.text.TextUtils;
 import android.util.Log;
@@ -65,8 +66,8 @@ public class DownloadRequest extends MmsRequest {
 
     public DownloadRequest(RequestManager manager, int subId, String locationUrl,
             Uri contentUri, PendingIntent downloadedIntent, String creator,
-            Bundle configOverrides) {
-        super(manager, subId, creator, configOverrides);
+            Bundle configOverrides, Context context) {
+        super(manager, subId, creator, configOverrides, context);
         mLocationUrl = locationUrl;
         mDownloadedIntent = downloadedIntent;
         mContentUri = contentUri;
@@ -87,7 +88,8 @@ public class DownloadRequest extends MmsRequest {
                 apn.isProxySet(),
                 apn.getProxyAddress(),
                 apn.getProxyPort(),
-                mMmsConfig);
+                mMmsConfig,
+                mSubId);
     }
 
     @Override
@@ -115,8 +117,9 @@ public class DownloadRequest extends MmsRequest {
         }
         final long identity = Binder.clearCallingIdentity();
         try {
-            final GenericPdu pdu =
-                    (new PduParser(response, mMmsConfig.getSupportMmsContentDisposition())).parse();
+            final boolean supportMmsContentDisposition =
+                    mMmsConfig.getBoolean(SmsManager.MMS_CONFIG_SUPPORT_MMS_CONTENT_DISPOSITION);
+            final GenericPdu pdu = (new PduParser(response, supportMmsContentDisposition)).parse();
             if (pdu == null || !(pdu instanceof RetrieveConf)) {
                 Log.e(MmsService.TAG, "DownloadRequest.persistIfRequired: invalid parsed PDU");
                 return null;
