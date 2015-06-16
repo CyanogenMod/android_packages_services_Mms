@@ -23,7 +23,6 @@ import android.net.NetworkCapabilities;
 import android.net.NetworkInfo;
 import android.net.NetworkRequest;
 import android.os.SystemClock;
-import android.util.Log;
 
 import com.android.mms.service.exception.MmsNetworkException;
 
@@ -67,7 +66,7 @@ public class MmsNetworkManager {
         @Override
         public void onAvailable(Network network) {
             super.onAvailable(network);
-            Log.d(MmsService.TAG, "NetworkCallbackListener.onAvailable: network=" + network);
+            LogUtil.i("NetworkCallbackListener.onAvailable: network=" + network);
             synchronized (MmsNetworkManager.this) {
                 mNetwork = network;
                 MmsNetworkManager.this.notifyAll();
@@ -77,7 +76,7 @@ public class MmsNetworkManager {
         @Override
         public void onLost(Network network) {
             super.onLost(network);
-            Log.d(MmsService.TAG, "NetworkCallbackListener.onLost: network=" + network);
+            LogUtil.w("NetworkCallbackListener.onLost: network=" + network);
             synchronized (MmsNetworkManager.this) {
                 releaseRequestLocked(this);
                 MmsNetworkManager.this.notifyAll();
@@ -87,7 +86,7 @@ public class MmsNetworkManager {
         @Override
         public void onUnavailable() {
             super.onUnavailable();
-            Log.d(MmsService.TAG, "NetworkCallbackListener.onUnavailable");
+            LogUtil.w("NetworkCallbackListener.onUnavailable");
             synchronized (MmsNetworkManager.this) {
                 releaseRequestLocked(this);
                 MmsNetworkManager.this.notifyAll();
@@ -113,19 +112,20 @@ public class MmsNetworkManager {
     /**
      * Acquire the MMS network
      *
+     * @param requestId request ID for logging
      * @throws com.android.mms.service.exception.MmsNetworkException if we fail to acquire it
      */
-    public void acquireNetwork() throws MmsNetworkException {
+    public void acquireNetwork(final String requestId) throws MmsNetworkException {
         synchronized (this) {
             mMmsRequestCount += 1;
             if (mNetwork != null) {
                 // Already available
-                Log.d(MmsService.TAG, "MmsNetworkManager: already available");
+                LogUtil.d(requestId, "MmsNetworkManager: already available");
                 return;
             }
             // Not available, so start a new request if not done yet
             if (mNetworkCallback == null) {
-                Log.d(MmsService.TAG, "MmsNetworkManager: start new network request");
+                LogUtil.d(requestId, "MmsNetworkManager: start new network request");
                 startNewNetworkRequestLocked();
             }
             final long shouldEnd = SystemClock.elapsedRealtime() + NETWORK_ACQUIRE_TIMEOUT_MILLIS;
@@ -134,7 +134,7 @@ public class MmsNetworkManager {
                 try {
                     this.wait(waitTime);
                 } catch (InterruptedException e) {
-                    Log.w(MmsService.TAG, "MmsNetworkManager: acquire network wait interrupted");
+                    LogUtil.w(requestId, "MmsNetworkManager: acquire network wait interrupted");
                 }
                 if (mNetwork != null) {
                     // Success
@@ -144,7 +144,7 @@ public class MmsNetworkManager {
                 waitTime = shouldEnd - SystemClock.elapsedRealtime();
             }
             // Timed out, so release the request and fail
-            Log.d(MmsService.TAG, "MmsNetworkManager: timed out");
+            LogUtil.e(requestId, "MmsNetworkManager: timed out");
             releaseRequestLocked(mNetworkCallback);
             throw new MmsNetworkException("Acquiring network timed out");
         }
@@ -152,12 +152,14 @@ public class MmsNetworkManager {
 
     /**
      * Release the MMS network when nobody is holding on to it.
+     *
+     * @param requestId request ID for logging
      */
-    public void releaseNetwork() {
+    public void releaseNetwork(final String requestId) {
         synchronized (this) {
             if (mMmsRequestCount > 0) {
                 mMmsRequestCount -= 1;
-                Log.d(MmsService.TAG, "MmsNetworkManager: release, count=" + mMmsRequestCount);
+                LogUtil.d(requestId, "MmsNetworkManager: release, count=" + mMmsRequestCount);
                 if (mMmsRequestCount < 1) {
                     releaseRequestLocked(mNetworkCallback);
                 }
@@ -232,18 +234,16 @@ public class MmsNetworkManager {
         Network network = null;
         synchronized (this) {
             if (mNetwork == null) {
-                Log.d(MmsService.TAG, "MmsNetworkManager: getApnName: network not available");
                 return null;
             }
             network = mNetwork;
         }
         String apnName = null;
         final ConnectivityManager connectivityManager = getConnectivityManager();
-        NetworkInfo mmsNetworkInfo = connectivityManager.getNetworkInfo(network);
+        final NetworkInfo mmsNetworkInfo = connectivityManager.getNetworkInfo(network);
         if (mmsNetworkInfo != null) {
             apnName = mmsNetworkInfo.getExtraInfo();
         }
-        Log.d(MmsService.TAG, "MmsNetworkManager: getApnName: " + apnName);
         return apnName;
     }
 }

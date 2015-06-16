@@ -26,15 +26,14 @@ import android.os.PersistableBundle;
 import android.telephony.CarrierConfigManager;
 import android.telephony.SmsManager;
 import android.telephony.SubscriptionInfo;
-import android.telephony.SubscriptionManager.OnSubscriptionsChangedListener;
 import android.telephony.SubscriptionManager;
+import android.telephony.SubscriptionManager.OnSubscriptionsChangedListener;
 import android.util.ArrayMap;
-import android.util.Log;
+
+import com.android.internal.telephony.IccCardConstants;
 
 import java.util.List;
 import java.util.Map;
-
-import com.android.internal.telephony.IccCardConstants;
 
 /**
  * This class manages cached copies of all the MMS configuration for each subscription ID.
@@ -43,8 +42,6 @@ import com.android.internal.telephony.IccCardConstants;
  *
  */
 public class MmsConfigManager {
-    private static final String TAG = MmsService.TAG;
-
     private static volatile MmsConfigManager sInstance = new MmsConfigManager();
 
     public static MmsConfigManager getInstance() {
@@ -66,7 +63,7 @@ public class MmsConfigManager {
     private final BroadcastReceiver mReceiver = new BroadcastReceiver() {
         public void onReceive(Context context, Intent intent) {
             String action = intent.getAction();
-            Log.i(TAG, "mReceiver action: " + action);
+            LogUtil.i("MmsConfigManager receiver action: " + action);
             if (action.equals(IccCardConstants.INTENT_VALUE_ICC_LOADED)) {
                 loadInBackground();
             }
@@ -87,7 +84,7 @@ public class MmsConfigManager {
         mSubscriptionManager = SubscriptionManager.from(context);
 
         // TODO: When this object "finishes" we should unregister.
-        IntentFilter intentFilterLoaded =
+        final IntentFilter intentFilterLoaded =
                 new IntentFilter(IccCardConstants.INTENT_VALUE_ICC_LOADED);
         context.registerReceiver(mReceiver, intentFilterLoaded);
 
@@ -110,7 +107,7 @@ public class MmsConfigManager {
                 Configuration configuration = mContext.getResources().getConfiguration();
                 // Always put the mnc/mcc in the log so we can tell which mms_config.xml
                 // was loaded.
-                Log.i(TAG, "MmsConfigManager.loadInBackground(): mcc/mnc: " +
+                LogUtil.i("MmsConfigManager loads in background mcc/mnc: " +
                         configuration.mcc + "/" + configuration.mnc);
                 load(mContext);
             }
@@ -131,7 +128,7 @@ public class MmsConfigManager {
         synchronized(mSubIdConfigMap) {
             mmsConfig = mSubIdConfigMap.get(subId);
         }
-        Log.i(TAG, "getMmsConfigBySubId -- for sub: " + subId + " mmsConfig: " + mmsConfig);
+        LogUtil.i("mms config for sub " + subId + ": " + mmsConfig);
         // Return a copy so that callers can mutate it.
         if (mmsConfig != null) {
           return new Bundle(mmsConfig);
@@ -148,16 +145,16 @@ public class MmsConfigManager {
     private void load(Context context) {
         List<SubscriptionInfo> subs = mSubscriptionManager.getActiveSubscriptionInfoList();
         if (subs == null || subs.size() < 1) {
-            Log.e(TAG, "MmsConfigManager.load -- empty getActiveSubInfoList");
+            LogUtil.e(" Failed to load mms config: empty getActiveSubInfoList");
             return;
         }
         // Load all the config bundles into a new map and then swap it with the real map to avoid
         // blocking.
         final Map<Integer, Bundle> newConfigMap = new ArrayMap<Integer, Bundle>();
-        CarrierConfigManager configManager =
+        final CarrierConfigManager configManager =
                 (CarrierConfigManager) context.getSystemService(Context.CARRIER_CONFIG_SERVICE);
         for (SubscriptionInfo sub : subs) {
-            int subId = sub.getSubscriptionId();
+            final int subId = sub.getSubscriptionId();
             PersistableBundle config = configManager.getConfigForSubId(subId);
             newConfigMap.put(subId, SmsManager.getMmsConfig(config));
         }

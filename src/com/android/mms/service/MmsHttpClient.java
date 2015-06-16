@@ -94,13 +94,14 @@ public class MmsHttpClient {
      * @param proxyPort The proxy port
      * @param mmsConfig The MMS config to use
      * @param subId The subscription ID used to get line number, etc.
+     * @param requestId The request ID for logging
      * @return The HTTP response body
      * @throws MmsHttpException For any failures
      */
     public byte[] execute(String urlString, byte[] pdu, String method, boolean isProxySet,
-            String proxyHost, int proxyPort, Bundle mmsConfig, int subId)
+            String proxyHost, int proxyPort, Bundle mmsConfig, int subId, String requestId)
             throws MmsHttpException {
-        Log.d(MmsService.TAG, "HTTP: " + method + " " + redactUrlForNonVerbose(urlString)
+        LogUtil.d(requestId, "HTTP: " + method + " " + redactUrlForNonVerbose(urlString)
                 + (isProxySet ? (", proxy=" + proxyHost + ":" + proxyPort) : "")
                 + ", PDU size=" + (pdu != null ? pdu.length : 0));
         checkMethod(method);
@@ -124,14 +125,14 @@ public class MmsHttpClient {
                     HEADER_ACCEPT_LANGUAGE, getCurrentAcceptLanguage(Locale.getDefault()));
             // Header: User-Agent
             final String userAgent = mmsConfig.getString(SmsManager.MMS_CONFIG_USER_AGENT);
-            Log.i(MmsService.TAG, "HTTP: User-Agent=" + userAgent);
+            LogUtil.i(requestId, "HTTP: User-Agent=" + userAgent);
             connection.setRequestProperty(HEADER_USER_AGENT, userAgent);
             // Header: x-wap-profile
             final String uaProfUrlTagName =
                     mmsConfig.getString(SmsManager.MMS_CONFIG_UA_PROF_TAG_NAME);
             final String uaProfUrl = mmsConfig.getString(SmsManager.MMS_CONFIG_UA_PROF_URL);
             if (uaProfUrl != null) {
-                Log.i(MmsService.TAG, "HTTP: UaProfUrl=" + uaProfUrl);
+                LogUtil.i(requestId, "HTTP: UaProfUrl=" + uaProfUrl);
                 connection.setRequestProperty(uaProfUrlTagName, uaProfUrl);
             }
             // Add extra headers specified by mms_config.xml's httpparams
@@ -139,7 +140,7 @@ public class MmsHttpClient {
             // Different stuff for GET and POST
             if (METHOD_POST.equals(method)) {
                 if (pdu == null || pdu.length < 1) {
-                    Log.e(MmsService.TAG, "HTTP: empty pdu");
+                    LogUtil.e(requestId, "HTTP: empty pdu");
                     throw new MmsHttpException(0/*statusCode*/, "Sending empty PDU");
                 }
                 connection.setDoOutput(true);
@@ -151,8 +152,8 @@ public class MmsHttpClient {
                     connection.setRequestProperty(HEADER_CONTENT_TYPE,
                             HEADER_VALUE_CONTENT_TYPE_WITHOUT_CHARSET);
                 }
-                if (Log.isLoggable(MmsService.TAG, Log.VERBOSE)) {
-                    logHttpHeaders(connection.getRequestProperties());
+                if (LogUtil.isLoggable(Log.VERBOSE)) {
+                    logHttpHeaders(connection.getRequestProperties(), requestId);
                 }
                 connection.setFixedLengthStreamingMode(pdu.length);
                 // Sending request body
@@ -162,17 +163,17 @@ public class MmsHttpClient {
                 out.flush();
                 out.close();
             } else if (METHOD_GET.equals(method)) {
-                if (Log.isLoggable(MmsService.TAG, Log.VERBOSE)) {
-                    logHttpHeaders(connection.getRequestProperties());
+                if (LogUtil.isLoggable(Log.VERBOSE)) {
+                    logHttpHeaders(connection.getRequestProperties(), requestId);
                 }
                 connection.setRequestMethod(METHOD_GET);
             }
             // Get response
             final int responseCode = connection.getResponseCode();
             final String responseMessage = connection.getResponseMessage();
-            Log.d(MmsService.TAG, "HTTP: " + responseCode + " " + responseMessage);
-            if (Log.isLoggable(MmsService.TAG, Log.VERBOSE)) {
-                logHttpHeaders(connection.getHeaderFields());
+            LogUtil.d(requestId, "HTTP: " + responseCode + " " + responseMessage);
+            if (LogUtil.isLoggable(Log.VERBOSE)) {
+                logHttpHeaders(connection.getHeaderFields(), requestId);
             }
             if (responseCode / 100 != 2) {
                 throw new MmsHttpException(responseCode, responseMessage);
@@ -186,19 +187,19 @@ public class MmsHttpClient {
             }
             in.close();
             final byte[] responseBody = byteOut.toByteArray();
-            Log.d(MmsService.TAG, "HTTP: response size="
+            LogUtil.d(requestId, "HTTP: response size="
                     + (responseBody != null ? responseBody.length : 0));
             return responseBody;
         } catch (MalformedURLException e) {
             final String redactedUrl = redactUrlForNonVerbose(urlString);
-            Log.e(MmsService.TAG, "HTTP: invalid URL " + redactedUrl, e);
+            LogUtil.e(requestId, "HTTP: invalid URL " + redactedUrl, e);
             throw new MmsHttpException(0/*statusCode*/, "Invalid URL " + redactedUrl, e);
         } catch (ProtocolException e) {
             final String redactedUrl = redactUrlForNonVerbose(urlString);
-            Log.e(MmsService.TAG, "HTTP: invalid URL protocol " + redactedUrl, e);
+            LogUtil.e(requestId, "HTTP: invalid URL protocol " + redactedUrl, e);
             throw new MmsHttpException(0/*statusCode*/, "Invalid URL protocol " + redactedUrl, e);
         } catch (IOException e) {
-            Log.e(MmsService.TAG, "HTTP: IO failure", e);
+            LogUtil.e(requestId, "HTTP: IO failure", e);
             throw new MmsHttpException(0/*statusCode*/, e);
         } finally {
             if (connection != null) {
@@ -207,7 +208,7 @@ public class MmsHttpClient {
         }
     }
 
-    private static void logHttpHeaders(Map<String, List<String>> headers) {
+    private static void logHttpHeaders(Map<String, List<String>> headers, String requestId) {
         final StringBuilder sb = new StringBuilder();
         if (headers != null) {
             for (Map.Entry<String, List<String>> entry : headers.entrySet()) {
@@ -219,7 +220,7 @@ public class MmsHttpClient {
                     }
                 }
             }
-            Log.v(MmsService.TAG, "HTTP: headers\n" + sb.toString());
+            LogUtil.v(requestId, "HTTP: headers\n" + sb.toString());
         }
     }
 
@@ -359,7 +360,7 @@ public class MmsHttpClient {
      * @return
      */
     public static String redactUrlForNonVerbose(String urlString) {
-        if (Log.isLoggable(MmsService.TAG, Log.VERBOSE)) {
+        if (LogUtil.isLoggable(Log.VERBOSE)) {
             // Don't redact for VERBOSE level logging
             return urlString;
         }
@@ -409,7 +410,7 @@ public class MmsHttpClient {
         } else if (MACRO_NAI.equals(macro)) {
             return getNai(context, mmsConfig, subId);
         }
-        Log.e(MmsService.TAG, "invalid macro " + macro);
+        LogUtil.e("Invalid macro " + macro);
         return null;
     }
 
@@ -442,8 +443,8 @@ public class MmsHttpClient {
         final TelephonyManager telephonyManager = (TelephonyManager) context.getSystemService(
                 Context.TELEPHONY_SERVICE);
         String nai = telephonyManager.getNai(SubscriptionManager.getSlotId(subId));
-        if (Log.isLoggable(MmsService.TAG, Log.VERBOSE)) {
-            Log.v(MmsService.TAG, "getNai: nai=" + nai);
+        if (LogUtil.isLoggable(Log.VERBOSE)) {
+            LogUtil.v("getNai: nai=" + nai);
         }
 
         if (!TextUtils.isEmpty(nai)) {

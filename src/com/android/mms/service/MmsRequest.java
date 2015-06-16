@@ -27,7 +27,6 @@ import android.service.carrier.ICarrierMessagingCallback;
 import android.telephony.SmsManager;
 import android.telephony.TelephonyManager;
 import android.text.TextUtils;
-import android.util.Log;
 
 import com.android.mms.service.exception.ApnException;
 import com.android.mms.service.exception.MmsHttpException;
@@ -107,13 +106,13 @@ public abstract class MmsRequest {
                 mMmsConfig = config;
                 // TODO: Make MmsConfigManager authoritative for user agent and don't consult
                 // TelephonyManager.
-                TelephonyManager telephonyManager =
+                final TelephonyManager telephonyManager =
                         (TelephonyManager) mContext.getSystemService(Context.TELEPHONY_SERVICE);
-                String userAgent = telephonyManager.getMmsUserAgent();
+                final String userAgent = telephonyManager.getMmsUserAgent();
                 if (!TextUtils.isEmpty(userAgent)) {
                     config.putString(SmsManager.MMS_CONFIG_USER_AGENT, userAgent);
                 }
-                String userAgentProfileUrl = telephonyManager.getMmsUAProfUrl();
+                final String userAgentProfileUrl = telephonyManager.getMmsUAProfUrl();
                 if (!TextUtils.isEmpty(userAgentProfileUrl)) {
                     config.putString(SmsManager.MMS_CONFIG_UA_PROF_URL, userAgentProfileUrl);
                 }
@@ -133,61 +132,64 @@ public abstract class MmsRequest {
      * @param networkManager The network manager to use
      */
     public void execute(Context context, MmsNetworkManager networkManager) {
+        final String requestId = this.toString();
+        LogUtil.i(requestId, "Executing...");
         int result = SmsManager.MMS_ERROR_UNSPECIFIED;
         int httpStatusCode = 0;
         byte[] response = null;
         // TODO: add mms data channel check back to fast fail if no way to send mms,
         // when telephony provides such API.
         if (!ensureMmsConfigLoaded()) { // Check mms config
-            Log.e(MmsService.TAG, "MmsRequest: mms config is not loaded yet");
+            LogUtil.e(requestId, "mms config is not loaded yet");
             result = SmsManager.MMS_ERROR_CONFIGURATION_ERROR;
         } else if (!prepareForHttpRequest()) { // Prepare request, like reading pdu data from user
-            Log.e(MmsService.TAG, "MmsRequest: failed to prepare for request");
+            LogUtil.e(requestId, "Failed to prepare for request");
             result = SmsManager.MMS_ERROR_IO_ERROR;
         } else { // Execute
             long retryDelaySecs = 2;
             // Try multiple times of MMS HTTP request
             for (int i = 0; i < RETRY_TIMES; i++) {
                 try {
-                    networkManager.acquireNetwork();
+                    networkManager.acquireNetwork(requestId);
                     final String apnName = networkManager.getApnName();
+                    LogUtil.d(requestId, "APN name is " + apnName);
                     try {
                         ApnSettings apn = null;
                         try {
-                            apn = ApnSettings.load(context, apnName, mSubId);
+                            apn = ApnSettings.load(context, apnName, mSubId, requestId);
                         } catch (ApnException e) {
                             // If no APN could be found, fall back to trying without the APN name
                             if (apnName == null) {
                                 // If the APN name was already null then don't need to retry
                                 throw (e);
                             }
-                            Log.i(MmsService.TAG, "MmsRequest: No match with APN name:"
+                            LogUtil.i(requestId, "No match with APN name: "
                                     + apnName + ", try with no name");
-                            apn = ApnSettings.load(context, null, mSubId);
+                            apn = ApnSettings.load(context, null, mSubId, requestId);
                         }
-                        Log.i(MmsService.TAG, "MmsRequest: using " + apn.toString());
+                        LogUtil.i(requestId, "Using " + apn.toString());
                         response = doHttp(context, networkManager, apn);
                         result = Activity.RESULT_OK;
                         // Success
                         break;
                     } finally {
-                        networkManager.releaseNetwork();
+                        networkManager.releaseNetwork(requestId);
                     }
                 } catch (ApnException e) {
-                    Log.e(MmsService.TAG, "MmsRequest: APN failure", e);
+                    LogUtil.e(requestId, "APN failure", e);
                     result = SmsManager.MMS_ERROR_INVALID_APN;
                     break;
                 } catch (MmsNetworkException e) {
-                    Log.e(MmsService.TAG, "MmsRequest: MMS network acquiring failure", e);
+                    LogUtil.e(requestId, "MMS network acquiring failure", e);
                     result = SmsManager.MMS_ERROR_UNABLE_CONNECT_MMS;
                     // Retry
                 } catch (MmsHttpException e) {
-                    Log.e(MmsService.TAG, "MmsRequest: HTTP or network I/O failure", e);
+                    LogUtil.e(requestId, "HTTP or network I/O failure", e);
                     result = SmsManager.MMS_ERROR_HTTP_FAILURE;
                     httpStatusCode = e.getStatusCode();
                     // Retry
                 } catch (Exception e) {
-                    Log.e(MmsService.TAG, "MmsRequest: unexpected failure", e);
+                    LogUtil.e(requestId, "Unexpected failure", e);
                     result = SmsManager.MMS_ERROR_UNSPECIFIED;
                     break;
                 }
@@ -232,7 +234,7 @@ public abstract class MmsRequest {
                 }
                 pendingIntent.send(context, result, fillIn);
             } catch (PendingIntent.CanceledException e) {
-                Log.e(MmsService.TAG, "MmsRequest: sending pending intent canceled", e);
+                LogUtil.e(this.toString(), "Sending pending intent canceled", e);
             }
         }
 
@@ -248,7 +250,7 @@ public abstract class MmsRequest {
                 == CarrierMessagingService.SEND_STATUS_RETRY_ON_CARRIER_NETWORK
                 || carrierMessagingAppResult
                         == CarrierMessagingService.DOWNLOAD_STATUS_RETRY_ON_CARRIER_NETWORK) {
-            Log.d(MmsService.TAG, "Sending/downloading MMS by IP failed.");
+            LogUtil.d(this.toString(), "Sending/downloading MMS by IP failed.");
             mRequestManager.addSimRequest(MmsRequest.this);
             return true;
         } else {
@@ -268,6 +270,11 @@ public abstract class MmsRequest {
             default:
                 return SmsManager.MMS_ERROR_UNSPECIFIED;
         }
+    }
+
+    @Override
+    public String toString() {
+        return getClass().getSimpleName() + '@' + Integer.toHexString(hashCode());
     }
 
     /**
@@ -331,18 +338,17 @@ public abstract class MmsRequest {
     protected abstract class CarrierMmsActionCallback extends ICarrierMessagingCallback.Stub {
         @Override
         public void onSendSmsComplete(int result, int messageRef) {
-            Log.e(MmsService.TAG, "Unexpected onSendSmsComplete call with result: " + result);
+            LogUtil.e("Unexpected onSendSmsComplete call with result: " + result);
         }
 
         @Override
         public void onSendMultipartSmsComplete(int result, int[] messageRefs) {
-            Log.e(MmsService.TAG, "Unexpected onSendMultipartSmsComplete call with result: "
-                  + result);
+            LogUtil.e("Unexpected onSendMultipartSmsComplete call with result: " + result);
         }
 
         @Override
         public void onFilterComplete(boolean keepMessage) {
-            Log.e(MmsService.TAG, "Unexpected onFilterComplete call with result: " + keepMessage);
+            LogUtil.e("Unexpected onFilterComplete call with result: " + keepMessage);
         }
     }
 }
