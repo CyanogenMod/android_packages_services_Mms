@@ -213,7 +213,7 @@ public class DownloadRequest extends MmsRequest {
         // by user policy.
         for (int i = users.length - 1; i >= 0; i--) {
             UserHandle targetUser = new UserHandle(users[i]);
-            if (users[i] != UserHandle.USER_OWNER) {
+            if (users[i] != UserHandle.USER_SYSTEM) {
                 // Is the user not allowed to use SMS?
                 if (userManager.hasUserRestriction(UserManager.DISALLOW_SMS, targetUser)) {
                     continue;
