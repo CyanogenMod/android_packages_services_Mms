@@ -109,7 +109,8 @@ public class MmsHttpClient {
         try {
             Proxy proxy = Proxy.NO_PROXY;
             if (isProxySet) {
-                proxy = new Proxy(Proxy.Type.HTTP, new InetSocketAddress(proxyHost, proxyPort));
+                proxy = new Proxy(Proxy.Type.HTTP,
+                        new InetSocketAddress(mNetwork.getByName(proxyHost), proxyPort));
             }
             final URL url = new URL(urlString);
             // Now get the connection
