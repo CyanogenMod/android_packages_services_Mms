@@ -421,7 +421,7 @@ public class MmsHttpClient {
     private static String getLine1(Context context, int subId) {
         final TelephonyManager telephonyManager = (TelephonyManager) context.getSystemService(
                 Context.TELEPHONY_SERVICE);
-        return telephonyManager.getLine1NumberForSubscriber(subId);
+        return telephonyManager.getLine1Number(subId);
     }
 
     /**
@@ -433,7 +433,7 @@ public class MmsHttpClient {
         return PhoneUtils.getNationalNumber(
                 telephonyManager,
                 subId,
-                telephonyManager.getLine1NumberForSubscriber(subId));
+                telephonyManager.getLine1Number(subId));
     }
 
     /**
