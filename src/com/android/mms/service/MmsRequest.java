@@ -347,8 +347,8 @@ public abstract class MmsRequest {
         }
 
         @Override
-        public void onFilterComplete(boolean keepMessage) {
-            LogUtil.e("Unexpected onFilterComplete call with result: " + keepMessage);
+        public void onFilterComplete(int result) {
+            LogUtil.e("Unexpected onFilterComplete call with result: " + result);
         }
     }
 }
