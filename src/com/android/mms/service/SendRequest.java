@@ -29,12 +29,15 @@ import android.provider.Telephony;
 import android.service.carrier.CarrierMessagingService;
 import android.service.carrier.ICarrierMessagingService;
 import android.telephony.CarrierMessagingServiceManager;
+import android.telephony.PhoneNumberUtils;
 import android.telephony.SmsManager;
 import android.text.TextUtils;
 
+import com.android.internal.telephony.AsyncEmergencyContactNotifier;
 import com.android.internal.telephony.SmsApplication;
 import com.android.mms.service.exception.MmsHttpException;
 import com.google.android.mms.MmsException;
+import com.google.android.mms.pdu.EncodedStringValue;
 import com.google.android.mms.pdu.GenericPdu;
 import com.google.android.mms.pdu.PduHeaders;
 import com.google.android.mms.pdu.PduParser;
@@ -70,6 +73,7 @@ public class SendRequest extends MmsRequest {
             LogUtil.e(requestId, "MMS network is not ready!");
             throw new MmsHttpException(0/*statusCode*/, "MMS network is not ready");
         }
+        notifyIfEmergencyContactNoThrow();
         return mmsHttpClient.execute(
                 mLocationUrl != null ? mLocationUrl : apn.getMmscUrl(),
                 mPduData,
@@ -80,6 +84,39 @@ public class SendRequest extends MmsRequest {
                 mMmsConfig,
                 mSubId,
                 requestId);
+    }
+
+    /**
+     * If the MMS is being sent to an emergency number, the blocked number provider is notified
+     * so that it can disable number blocking.
+     */
+    private void notifyIfEmergencyContactNoThrow() {
+        try {
+            notifyIfEmergencyContact();
+        } catch (Exception e) {
+            LogUtil.w("Error in notifyIfEmergencyContact: ", e);
+        }
+    }
+
+    private void notifyIfEmergencyContact() {
+        final boolean supportContentDisposition =
+                mMmsConfig.getBoolean(SmsManager.MMS_CONFIG_SUPPORT_MMS_CONTENT_DISPOSITION);
+        GenericPdu parsedPdu = new PduParser(mPduData, supportContentDisposition).parse();
+
+        if (parsedPdu != null && parsedPdu.getMessageType() == PduHeaders.MESSAGE_TYPE_SEND_REQ) {
+            SendReq sendReq = (SendReq) parsedPdu;
+            for (EncodedStringValue encodedStringValue : sendReq.getTo()) {
+                if (isEmergencyNumber(encodedStringValue.getString())) {
+                    LogUtil.i("Notifying emergency contact.");
+                    new AsyncEmergencyContactNotifier(mContext).execute();
+                    return;
+                }
+            }
+        }
+    }
+
+    private boolean isEmergencyNumber(String address) {
+        return !TextUtils.isEmpty(address) && PhoneNumberUtils.isEmergencyNumber(mSubId, address);
     }
 
     @Override
