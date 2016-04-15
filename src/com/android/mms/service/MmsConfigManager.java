@@ -65,7 +65,8 @@ public class MmsConfigManager {
         public void onReceive(Context context, Intent intent) {
             String action = intent.getAction();
             LogUtil.i("MmsConfigManager receiver action: " + action);
-            if (action.equals(TelephonyIntents.ACTION_SIM_STATE_CHANGED)) {
+            if (action.equals(TelephonyIntents.ACTION_SIM_STATE_CHANGED) ||
+                    action.equals(CarrierConfigManager.ACTION_CARRIER_CONFIG_CHANGED)) {
                 loadInBackground();
             }
         }
@@ -87,6 +88,7 @@ public class MmsConfigManager {
         // TODO: When this object "finishes" we should unregister.
         final IntentFilter intentFilterLoaded =
                 new IntentFilter(TelephonyIntents.ACTION_SIM_STATE_CHANGED);
+        intentFilterLoaded.addAction(CarrierConfigManager.ACTION_CARRIER_CONFIG_CHANGED);
         context.registerReceiver(mReceiver, intentFilterLoaded);
 
         // TODO: When this object "finishes" we should unregister by invoking
