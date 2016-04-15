@@ -70,7 +70,7 @@ public class DownloadRequest extends MmsRequest {
     @Override
     protected byte[] doHttp(Context context, MmsNetworkManager netMgr, ApnSettings apn)
             throws MmsHttpException {
-        final String requestId = this.toString();
+        final String requestId = getRequestId();
         final MmsHttpClient mmsHttpClient = netMgr.getOrCreateHttpClient();
         if (mmsHttpClient == null) {
             LogUtil.e(requestId, "MMS network is not ready!");
@@ -100,7 +100,7 @@ public class DownloadRequest extends MmsRequest {
 
     @Override
     protected Uri persistIfRequired(Context context, int result, byte[] response) {
-        final String requestId = this.toString();
+        final String requestId = getRequestId();
         // Let any mms apps running as secondary user know that a new mms has been downloaded.
         notifyOfDownload(context);
 

@@ -277,6 +277,11 @@ public abstract class MmsRequest {
         return getClass().getSimpleName() + '@' + Integer.toHexString(hashCode());
     }
 
+
+    protected String getRequestId() {
+        return this.toString();
+    }
+
     /**
      * Making the HTTP request to MMSC
      *
