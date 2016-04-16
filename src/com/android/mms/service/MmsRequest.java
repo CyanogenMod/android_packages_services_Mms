@@ -25,6 +25,7 @@ import android.os.Bundle;
 import android.service.carrier.CarrierMessagingService;
 import android.service.carrier.ICarrierMessagingCallback;
 import android.telephony.SmsManager;
+import android.telephony.SubscriptionManager;
 import android.telephony.TelephonyManager;
 import android.text.TextUtils;
 
@@ -37,6 +38,7 @@ import com.android.mms.service.exception.MmsNetworkException;
  */
 public abstract class MmsRequest {
     private static final int RETRY_TIMES = 3;
+    private static final int RETRY_TIMES_WITH_DATA_SWITCH = 5;
 
     /**
      * Interface for certain functionalities from MmsService
@@ -83,6 +85,8 @@ public abstract class MmsRequest {
     protected Bundle mMmsConfigOverrides;
     // Context used to get TelephonyManager.
     protected Context mContext;
+    // The active DDS id
+    protected int mDataSubId;
 
     public MmsRequest(RequestManager requestManager, int subId, String creator,
             Bundle configOverrides, Context context) {
@@ -137,6 +141,8 @@ public abstract class MmsRequest {
         int result = SmsManager.MMS_ERROR_UNSPECIFIED;
         int httpStatusCode = 0;
         byte[] response = null;
+
+        mDataSubId = getDefaultDataSubId();
         // TODO: add mms data channel check back to fast fail if no way to send mms,
         // when telephony provides such API.
         if (!ensureMmsConfigLoaded()) { // Check mms config
@@ -146,9 +152,21 @@ public abstract class MmsRequest {
             LogUtil.e(requestId, "Failed to prepare for request");
             result = SmsManager.MMS_ERROR_IO_ERROR;
         } else { // Execute
+            int retryTimes = RETRY_TIMES;
+            if (getDefaultDataSubId() != mSubId) {
+                setDefaultDataSubId(mSubId);
+                // Give the switch some time to happen
+                try {
+                    Thread.sleep(10 * 1000, 0/*nano*/);
+                } catch (InterruptedException e) {}
+                // DDS switches are expensive. Instead of retrying for just 30 seconds,
+                // try up to approximately 2 minutes before giving up and switching back
+                retryTimes = RETRY_TIMES_WITH_DATA_SWITCH;
+            }
+
             long retryDelaySecs = 2;
             // Try multiple times of MMS HTTP request
-            for (int i = 0; i < RETRY_TIMES; i++) {
+            for (int i = 0; i < retryTimes; i++) {
                 try {
                     networkManager.acquireNetwork(requestId);
                     final String apnName = networkManager.getApnName();
@@ -239,6 +257,9 @@ public abstract class MmsRequest {
         }
 
         revokeUriPermission(context);
+        if (getDefaultDataSubId() != mDataSubId) {
+            setDefaultDataSubId(mDataSubId);
+        }
     }
 
     /**
@@ -351,4 +372,19 @@ public abstract class MmsRequest {
             LogUtil.e("Unexpected onFilterComplete call with result: " + keepMessage);
         }
     }
+
+    /*
+     * @return the subId of whichever subId is active for data.
+     */
+    private int getDefaultDataSubId() {
+        return SubscriptionManager.from(mContext).getDefaultDataSubId();
+    }
+    /*
+     * @return set the subId for data
+     */
+    private void setDefaultDataSubId(int subId) {
+        SubscriptionManager.from(mContext).setDefaultDataSubId(subId);
+        // Should we toast about the data switch like Settings?
+    }
+
 }
