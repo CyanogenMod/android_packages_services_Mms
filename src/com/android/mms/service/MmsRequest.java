@@ -141,6 +141,12 @@ public abstract class MmsRequest {
         int result = SmsManager.MMS_ERROR_UNSPECIFIED;
         int httpStatusCode = 0;
         byte[] response = null;
+        // Was the data state forcefully toggled for this?
+        boolean dataEnablementRequired = false;
+        final boolean allowDataEnablement =
+                    mContext.getResources().getBoolean(R.bool.enable_data_for_mms);
+        final TelephonyManager telephonyManager =
+                    (TelephonyManager) mContext.getSystemService(Context.TELEPHONY_SERVICE);
 
         mDataSubId = getDefaultDataSubId();
         // TODO: add mms data channel check back to fast fail if no way to send mms,
@@ -153,6 +159,12 @@ public abstract class MmsRequest {
             result = SmsManager.MMS_ERROR_IO_ERROR;
         } else { // Execute
             int retryTimes = RETRY_TIMES;
+
+            // If the subscription has data disabled, bring it up
+            if (allowDataEnablement && !telephonyManager.getDataEnabled(mSubId)) {
+                dataEnablementRequired = true;
+            }
+
             if (getDefaultDataSubId() != mSubId) {
                 setDefaultDataSubId(mSubId);
                 // Give the switch some time to happen
@@ -168,6 +180,9 @@ public abstract class MmsRequest {
             // Try multiple times of MMS HTTP request
             for (int i = 0; i < retryTimes; i++) {
                 try {
+                    if (dataEnablementRequired) {
+                        telephonyManager.setDataEnabled(mSubId, true);
+                    }
                     networkManager.acquireNetwork(requestId);
                     final String apnName = networkManager.getApnName();
                     LogUtil.d(requestId, "APN name is " + apnName);
@@ -192,6 +207,9 @@ public abstract class MmsRequest {
                         break;
                     } finally {
                         networkManager.releaseNetwork(requestId);
+                        if (dataEnablementRequired) {
+                            telephonyManager.setDataEnabled(mSubId, false);
+                        }
                     }
                 } catch (ApnException e) {
                     LogUtil.e(requestId, "APN failure", e);
