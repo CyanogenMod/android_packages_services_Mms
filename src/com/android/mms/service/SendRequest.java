@@ -35,9 +35,7 @@ import android.text.TextUtils;
 
 import com.android.internal.telephony.AsyncEmergencyContactNotifier;
 import com.android.internal.telephony.Phone;
-import com.android.internal.telephony.PhoneBase;
 import com.android.internal.telephony.PhoneFactory;
-import com.android.internal.telephony.PhoneProxy;
 import com.android.internal.telephony.SmsApplication;
 import com.android.internal.telephony.SmsNumberUtils;
 import com.android.mms.service.exception.MmsHttpException;
@@ -279,13 +277,12 @@ public class SendRequest extends MmsRequest {
             int nNumberCount = recipientNumbers.length;
             if (nNumberCount > 0) {
                 Phone phone = PhoneFactory.getDefaultPhone();
-                PhoneBase pb = (PhoneBase)((PhoneProxy)phone).getActivePhone();
                 EncodedStringValue[] newNumbers = new EncodedStringValue[nNumberCount];
                 String toNumber;
                 String newToNumber;
                 for (int i = 0; i < nNumberCount; i++) {
                     toNumber = recipientNumbers[i].getString();
-                    newToNumber = SmsNumberUtils.filterDestAddr(pb, toNumber);
+                    newToNumber = SmsNumberUtils.filterDestAddr(phone, toNumber);
                     if (!TextUtils.equals(toNumber, newToNumber)) {
                         isUpdated = true;
                         newNumbers[i] = new EncodedStringValue(newToNumber);
