@@ -242,7 +242,7 @@ public class SendRequest extends MmsRequest {
             return ;
         }
         if (!(pdu instanceof SendReq)) {
-            LogUtil.e(requestId, "updateDestinationAddress: not SendReq");
+            LogUtil.i(requestId, "updateDestinationAddress: not SendReq");
             return;
         }
 

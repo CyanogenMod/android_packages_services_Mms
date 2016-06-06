@@ -229,7 +229,7 @@ public class MmsNetworkManager {
             if (mMmsHttpClient == null) {
                 if (mNetwork != null) {
                     // Create new MmsHttpClient for the current Network
-                    mMmsHttpClient = new MmsHttpClient(mContext, mNetwork);
+                    mMmsHttpClient = new MmsHttpClient(mContext, mNetwork, mConnectivityManager);
                 }
             }
             return mMmsHttpClient;
