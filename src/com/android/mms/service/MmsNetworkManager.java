@@ -16,10 +16,7 @@
 
 package com.android.mms.service;
 
-import android.content.BroadcastReceiver;
 import android.content.Context;
-import android.content.Intent;
-import android.content.IntentFilter;
 import android.net.ConnectivityManager;
 import android.net.Network;
 import android.net.NetworkCapabilities;
@@ -27,12 +24,7 @@ import android.net.NetworkInfo;
 import android.net.NetworkRequest;
 import android.os.SystemClock;
 
-import android.telephony.SubscriptionManager;
-
 import com.android.mms.service.exception.MmsNetworkException;
-
-import com.android.internal.telephony.PhoneConstants;
-import com.android.internal.telephony.TelephonyIntents;
 
 /**
  * Manages the MMS network connectivity
@@ -66,9 +58,6 @@ public class MmsNetworkManager {
 
     // The SIM ID which we use to connect
     private final int mSubId;
-
-    private int mUserChosenDataSubId = -1;
-    private boolean mWaitForDataSwitch;
 
     /**
      * Network callback for our network request
@@ -118,32 +107,7 @@ public class MmsNetworkManager {
                 .addCapability(NetworkCapabilities.NET_CAPABILITY_MMS)
                 .setNetworkSpecifier(Integer.toString(mSubId))
                 .build();
-        // Register for DDS changes
-        IntentFilter filter = new IntentFilter();
-        filter.addAction(TelephonyIntents.ACTION_DEFAULT_DATA_SUBSCRIPTION_CHANGED);
-        context.registerReceiver(mIntentReceiver, filter, null, null);
-
     }
-
-    private BroadcastReceiver mIntentReceiver = new BroadcastReceiver() {
-        @Override
-        public void onReceive(Context context, Intent intent) {
-            ddsHasChanged(intent.getIntExtra(PhoneConstants.SUBSCRIPTION_KEY, -1));
-        }
-    };
-
-    private void ddsHasChanged(int subId) {
-        if (mSubId == subId) {
-            mWaitForDataSwitch = false;
-            LogUtil.d("MmsNetworkManager: DDS switch to " + subId + " complete");
-        }
-    }
-
-    private void setDefaultDataSubId(int subId) {
-        SubscriptionManager.from(mContext).setDefaultDataSubId(subId);
-        // Should we toast about the data switch like Settings?
-    }
-
 
     /**
      * Acquire the MMS network
@@ -164,11 +128,6 @@ public class MmsNetworkManager {
                 LogUtil.d(requestId, "MmsNetworkManager: start new network request");
                 startNewNetworkRequestLocked();
             }
-            // If we got here and still think there's a data switch pending, it didn't take
-            if (mWaitForDataSwitch) {
-                throw new MmsNetworkException("Acquiring data subscription timed out");
-            }
-
             final long shouldEnd = SystemClock.elapsedRealtime() + NETWORK_ACQUIRE_TIMEOUT_MILLIS;
             long waitTime = NETWORK_ACQUIRE_TIMEOUT_MILLIS;
             while (waitTime > 0) {
@@ -213,28 +172,6 @@ public class MmsNetworkManager {
      */
     private void startNewNetworkRequestLocked() {
         final ConnectivityManager connectivityManager = getConnectivityManager();
-
-        if (mSubId != SubscriptionManager.from(mContext).getDefaultDataSubId()) {
-            mUserChosenDataSubId = SubscriptionManager.from(mContext).getDefaultDataSubId();
-            mWaitForDataSwitch = true;
-            setDefaultDataSubId(mSubId);
-        } else {
-            mWaitForDataSwitch = false;
-        }
-
-        long waitTime = 120 * 1000; // Wait at most 2 minutes for the data switch
-        long switchAbortTime = SystemClock.elapsedRealtime() + waitTime;
-
-        while (mWaitForDataSwitch && waitTime > 0) {
-            LogUtil.d("MmsNetworkManager: Waiting for DDS switch");
-            try {
-                this.wait(2 * 1000); // Re-check every 2 seconds
-            } catch (InterruptedException e) {
-                LogUtil.w("MmsNetworkManager: DDS switch wait interrupted");
-            }
-            waitTime = switchAbortTime - SystemClock.elapsedRealtime();
-        }
-
         mNetworkCallback = new NetworkRequestCallback();
         connectivityManager.requestNetwork(
                 mNetworkRequest, mNetworkCallback, NETWORK_REQUEST_TIMEOUT_MILLIS);
@@ -261,12 +198,6 @@ public class MmsNetworkManager {
                 LogUtil.w("Unregister network callback exception", e);
             }
         }
-
-        if (mUserChosenDataSubId >= 0 && mSubId != mUserChosenDataSubId) {
-            setDefaultDataSubId(mUserChosenDataSubId);
-            mUserChosenDataSubId = -1;
-        }
-
         resetLocked();
     }
 
